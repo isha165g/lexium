@@ -125,9 +125,10 @@ fun LoginScreen(
                         onClick = {
                             viewModel.login(email, password) { success ->
                                 if (success) {
+                                    println("LOGIN SUCCESS")
                                     onLoginSuccess()
                                 } else {
-                                    println("Login failed")
+                                    println("LOGIN FAILED")
                                 }
                             }
                         },

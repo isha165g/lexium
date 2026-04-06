@@ -6,6 +6,7 @@ import androidx.navigation.compose.*
 import com.example.lexium.ui.auth.LoginScreen
 import com.example.lexium.ui.auth.RegisterScreen
 import com.example.lexium.viewmodel.AuthViewModel
+import com.example.lexium.ui.HomeScreen
 
 @Composable
 fun AppNavigation() {
@@ -22,7 +23,7 @@ fun AppNavigation() {
             LoginScreen(
                 viewModel = viewModel,
                 onLoginSuccess = {
-                    // TODO: go to home later
+                    navController.navigate("home")
                 },
                 onRegisterClick = {
                     navController.navigate("register")
@@ -37,6 +38,10 @@ fun AppNavigation() {
                     navController.popBackStack()
                 }
             )
+        }
+
+        composable("home") {
+            HomeScreen()
         }
     }
 }
