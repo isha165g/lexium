@@ -19,6 +19,8 @@ import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.lexium.viewmodel.VocabViewModel
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.AssistChip
 
 fun findSentence(text: String, word: String): String {
     val sentences = text.split(Regex("[.!?]"))
@@ -27,16 +29,23 @@ fun findSentence(text: String, word: String): String {
 
 fun getMeaning(word: String): String {
     return when (word.lowercase()) {
-        "tenuous" -> "weak or lacking support"
-        "ephemeral" -> "lasting a short time"
+        "tenuous" -> "Very weak or slight; lacking strength"
         else -> "Meaning not found"
     }
 }
 
 fun getContextMeaning(word: String, sentence: String): String {
-    return "In this sentence, \"$word\" refers to something that fits the context: \"$sentence\""
+    return "In this sentence, \"$word\" describes something weak or unsupported."
 }
 
+fun getSynonyms(word: String): List<String> {
+    return when (word.lowercase()) {
+        "tenuous" -> listOf("weak", "flimsy", "slender")
+        else -> emptyList()
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun OCRScreen() {
 
@@ -45,6 +54,7 @@ fun OCRScreen() {
     var selectedWordIndex by remember { mutableIntStateOf(-1) }
     var selectedWord by remember { mutableStateOf("") }
     var selectedSentence by remember { mutableStateOf("") }
+    var showSheet by remember { mutableStateOf(false) }
 
     val vocabViewModel: VocabViewModel = viewModel()
 
@@ -160,6 +170,7 @@ fun OCRScreen() {
 
                         selectedWord = word
                         selectedSentence = sentence
+                        showSheet = true
 
                         vocabViewModel.saveWord(
                             word = word,
@@ -199,12 +210,79 @@ fun OCRScreen() {
             style = MaterialTheme.typography.bodyMedium
         )
 
-        if (selectedWord.isNotEmpty()) {
-            Text(
-                text = "Saved to vocabulary",
-                color = Color.Green,
-                style = MaterialTheme.typography.bodyMedium
-            )
+        if (showSheet) {
+            ModalBottomSheet(
+                onDismissRequest = { showSheet = false }
+            ) {
+
+                val meaning = getMeaning(selectedWord)
+                val contextMeaning = getContextMeaning(selectedWord, selectedSentence)
+                val synonyms = getSynonyms(selectedWord)
+
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp)
+                ) {
+
+                    Text(
+                        text = selectedWord,
+                        style = MaterialTheme.typography.headlineLarge
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Text(
+                        text = "Definition",
+                        style = MaterialTheme.typography.labelMedium
+                    )
+
+                    Text(text = meaning)
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Text(
+                        text = "Context Meaning",
+                        style = MaterialTheme.typography.labelMedium
+                    )
+
+                    Text(text = contextMeaning)
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Text(
+                        text = "Synonyms",
+                        style = MaterialTheme.typography.labelMedium
+                    )
+
+                    Row {
+                        synonyms.forEach { syn ->
+                            AssistChip(
+                                onClick = {},
+                                label = { Text(syn) },
+                                modifier = Modifier.padding(end = 6.dp)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    Button(
+                        onClick = {
+                            val meaning = getMeaning(selectedWord)
+
+                            vocabViewModel.saveWord(
+                                word = selectedWord,
+                                meaning = meaning,
+                                sentence = selectedSentence
+                            )
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Capture Word")
+                    }
+                }
+            }
         }
     }
 }
