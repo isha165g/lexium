@@ -21,9 +21,9 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.lexium.viewmodel.VocabViewModel
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.AssistChip
-import com.example.lexium.ai.AIEngine
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
+import com.example.lexium.ai.GeminiService
+
+// ---------------- HELPERS ----------------
 
 fun findSentence(text: String, word: String): String {
     val sentences = text.split(Regex("[.!?]"))
@@ -37,23 +37,6 @@ fun getMeaning(word: String): String {
     }
 }
 
-fun getContextMeaning(word: String, sentence: String): String {
-
-    // TEMP hybrid (AI-ready structure)
-    val lower = sentence.lowercase()
-
-    return when {
-        lower.contains("lack") ->
-            "\"$word\" refers to something weak or unsupported in this context."
-
-        lower.contains("increase") ->
-            "\"$word\" suggests something growing or strengthening."
-
-        else ->
-            "AI analysis: \"$word\" depends on how it is used in \"$sentence\""
-    }
-}
-
 fun getSynonyms(word: String): List<String> {
     return when (word.lowercase()) {
         "tenuous" -> listOf("weak", "flimsy", "slender")
@@ -61,20 +44,15 @@ fun getSynonyms(word: String): List<String> {
     }
 }
 
-fun interpretMeaning(word: String): String {
-    return when (word.lowercase()) {
-        "tenuous" -> "weak or lacking strong support"
-        "ephemeral" -> "short-lived or temporary"
-        else -> "context-dependent"
-    }
-}
+// ---------------- MAIN SCREEN ----------------
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun OCRScreen() {
 
     val context = LocalContext.current
-    val aiEngine = remember { AIEngine(context) }
+    val geminiService = remember { GeminiService() }
+
     var extractedText by remember { mutableStateOf("") }
     var selectedWordIndex by remember { mutableIntStateOf(-1) }
     var selectedWord by remember { mutableStateOf("") }
@@ -112,12 +90,9 @@ fun OCRScreen() {
             words.forEachIndexed { index, word ->
 
                 val start = length
-
                 append(word)
-
                 val end = length
 
-                // Tag each word with index
                 addStringAnnotation(
                     tag = "WORD",
                     annotation = index.toString(),
@@ -125,7 +100,6 @@ fun OCRScreen() {
                     end = end
                 )
 
-                // Highlight ONLY selected index
                 if (index == selectedWordIndex) {
                     addStyle(
                         style = SpanStyle(
@@ -197,6 +171,8 @@ fun OCRScreen() {
             )
         }
 
+        // ---------------- BOTTOM SHEET ----------------
+
         if (showSheet) {
             ModalBottomSheet(
                 onDismissRequest = { showSheet = false }
@@ -205,18 +181,14 @@ fun OCRScreen() {
                 val meaning = remember(selectedWord) { getMeaning(selectedWord) }
                 val synonyms = remember(selectedWord) { getSynonyms(selectedWord) }
 
-                var aiMeaning by remember(selectedWord, selectedSentence) {
-                    mutableStateOf("Loading...")
-                }
+                var aiResponse by remember { mutableStateOf("Loading...") }
 
                 LaunchedEffect(selectedWord, selectedSentence) {
-                    aiMeaning = "Loading..."
+                    aiResponse = "Loading..."
 
-                    val result = withContext(Dispatchers.Default) {
-                        aiEngine.getBestMeaning(selectedWord, selectedSentence)
+                    geminiService.getMeaning(selectedWord, selectedSentence) { result ->
+                        aiResponse = result
                     }
-
-                    aiMeaning = result
                 }
 
                 Column(
@@ -232,32 +204,27 @@ fun OCRScreen() {
 
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    Text(
-                        text = "Definition",
-                        style = MaterialTheme.typography.labelMedium
-                    )
-
+                    // Dictionary Meaning
+                    Text("Definition", style = MaterialTheme.typography.labelMedium)
                     Text(text = meaning)
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    Text(
-                        text = "AI Meaning",
-                        style = MaterialTheme.typography.labelMedium
-                    )
+                    // AI Meaning
+                    Text("AI Explanation", style = MaterialTheme.typography.labelMedium)
 
-                    if (aiMeaning == "Loading...") {
+                    if (aiResponse == "Loading...") {
                         CircularProgressIndicator()
                     } else {
-                        Text(text = aiMeaning)
+                        aiResponse.split("\n").forEach {
+                            Text(text = it)
+                        }
                     }
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    Text(
-                        text = "Synonyms",
-                        style = MaterialTheme.typography.labelMedium
-                    )
+                    // Synonyms
+                    Text("Synonyms", style = MaterialTheme.typography.labelMedium)
 
                     Row {
                         synonyms.forEach { syn ->
@@ -281,12 +248,10 @@ fun OCRScreen() {
                         },
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text("Capture Word")
+                        Text("Capture Word 📚")
                     }
                 }
             }
         }
     }
 }
-
-

@@ -2,6 +2,7 @@
 .gradle
 /local.properties
 /app/src/main/assets/
+secrets.properties
 /.idea/caches
 /.idea/libraries
 /.idea/modules.xml
@@ -15,3 +16,4 @@
 .cxx
 local.properties
 /app/src/main/assets/
+secrets.properties
