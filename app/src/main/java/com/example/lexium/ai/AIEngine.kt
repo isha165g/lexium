@@ -4,6 +4,10 @@ import android.content.Context
 import ai.onnxruntime.*
 import kotlin.math.sqrt
 
+data class MeaningEntry(
+    val meaning: String,
+    val embedding: FloatArray
+)
 class AIEngine(context: Context) {
 
     private val env = OrtEnvironment.getEnvironment()
@@ -106,7 +110,8 @@ class AIEngine(context: Context) {
     }
 
     // 📐 Cosine similarity
-    private fun cosineSimilarity(a: FloatArray, b: FloatArray): Float {
+    fun cosineSimilarity(a: FloatArray, b: FloatArray): Float {
+
         var dot = 0f
         var normA = 0f
         var normB = 0f
@@ -117,11 +122,52 @@ class AIEngine(context: Context) {
             normB += b[i] * b[i]
         }
 
-        return (dot / (sqrt(normA) * sqrt(normB)))
+        return (dot / (Math.sqrt(normA.toDouble()) * Math.sqrt(normB.toDouble()))).toFloat()
     }
 
     // 🧾 Build query (used by UI)
     fun buildQuery(word: String, sentence: String): String {
-        return "$word in context: $sentence"
+        return "Word: $word. Sentence: $sentence. Meaning:"
+    }
+
+    private fun getRawMeanings(): List<Pair<String, String>> {
+        return listOf(
+            "tenuous" to "weak or lacking strong support",
+            "ephemeral" to "lasting a very short time",
+            "robust" to "strong and healthy",
+            "forcefully" to "done with strength or intensity",
+            "quickly" to "done with speed",
+            "carefully" to "done with attention and caution",
+            "strongly" to "with great force or intensity"
+        )
+    }
+
+    private val meaningDatabase by lazy {
+        getRawMeanings().map { (word, meaning) ->
+            word to MeaningEntry(
+                meaning,
+                getEmbedding(meaning) // runs ONCE only
+            )
+        }
+    }
+
+    fun getBestMeaning(word: String, sentence: String): String {
+
+        val queryEmbedding = getEmbedding(buildQuery(word, sentence))
+
+        var bestScore = -1f
+        var bestMeaning = "Meaning not found"
+
+        for ((_, entry) in meaningDatabase) {
+
+            val score = cosineSimilarity(queryEmbedding, entry.embedding)
+
+            if (score > bestScore) {
+                bestScore = score
+                bestMeaning = entry.meaning
+            }
+        }
+
+        return bestMeaning
     }
 }

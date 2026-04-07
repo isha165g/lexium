@@ -205,20 +205,18 @@ fun OCRScreen() {
                 val meaning = remember(selectedWord) { getMeaning(selectedWord) }
                 val synonyms = remember(selectedWord) { getSynonyms(selectedWord) }
 
-                var aiOutput by remember(selectedWord, selectedSentence) {
+                var aiMeaning by remember(selectedWord, selectedSentence) {
                     mutableStateOf("Loading...")
                 }
 
                 LaunchedEffect(selectedWord, selectedSentence) {
-                    aiOutput = "Loading..."
-
-                    val query = aiEngine.buildQuery(selectedWord, selectedSentence)
+                    aiMeaning = "Loading..."
 
                     val result = withContext(Dispatchers.Default) {
-                        aiEngine.runModel(query)
+                        aiEngine.getBestMeaning(selectedWord, selectedSentence)
                     }
 
-                    aiOutput = result
+                    aiMeaning = result
                 }
 
                 Column(
@@ -244,11 +242,15 @@ fun OCRScreen() {
                     Spacer(modifier = Modifier.height(12.dp))
 
                     Text(
-                        text = "Context Meaning",
+                        text = "AI Meaning",
                         style = MaterialTheme.typography.labelMedium
                     )
 
-                    Text(text = aiOutput)
+                    if (aiMeaning == "Loading...") {
+                        CircularProgressIndicator()
+                    } else {
+                        Text(text = aiMeaning)
+                    }
 
                     Spacer(modifier = Modifier.height(12.dp))
 
@@ -271,8 +273,6 @@ fun OCRScreen() {
 
                     Button(
                         onClick = {
-                            val meaning = getMeaning(selectedWord)
-
                             vocabViewModel.saveWord(
                                 word = selectedWord,
                                 meaning = meaning,
