@@ -7,6 +7,7 @@ import com.example.lexium.ui.auth.LoginScreen
 import com.example.lexium.ui.auth.RegisterScreen
 import com.example.lexium.viewmodel.AuthViewModel
 import com.example.lexium.ui.HomeScreen
+import com.example.lexium.ui.OCRScreen
 
 @Composable
 fun AppNavigation() {
@@ -41,7 +42,11 @@ fun AppNavigation() {
         }
 
         composable("home") {
-            HomeScreen()
+            HomeScreen(navController)
+        }
+
+        composable("ocr") {
+            OCRScreen()
         }
     }
 }
