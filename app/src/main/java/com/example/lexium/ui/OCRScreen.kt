@@ -17,6 +17,8 @@ import androidx.compose.foundation.text.ClickableText
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.lexium.viewmodel.VocabViewModel
 
 fun findSentence(text: String, word: String): String {
     val sentences = text.split(Regex("[.!?]"))
@@ -43,6 +45,8 @@ fun OCRScreen() {
     var selectedWordIndex by remember { mutableIntStateOf(-1) }
     var selectedWord by remember { mutableStateOf("") }
     var selectedSentence by remember { mutableStateOf("") }
+
+    val vocabViewModel: VocabViewModel = viewModel()
 
     val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
 
@@ -151,11 +155,17 @@ fun OCRScreen() {
                         val words = extractedText.split("\\s+".toRegex())
                         val word = words.getOrNull(index) ?: ""
 
-                        // 🔥 NEW LOGIC
                         val sentence = findSentence(extractedText, word)
+                        val meaning = getMeaning(word)
 
                         selectedWord = word
                         selectedSentence = sentence
+
+                        vocabViewModel.saveWord(
+                            word = word,
+                            meaning = meaning,
+                            sentence = sentence
+                        )
                     }
                 }
             )
@@ -188,6 +198,14 @@ fun OCRScreen() {
             text = "Context Meaning: $contextMeaning",
             style = MaterialTheme.typography.bodyMedium
         )
+
+        if (selectedWord.isNotEmpty()) {
+            Text(
+                text = "Saved to vocabulary",
+                color = Color.Green,
+                style = MaterialTheme.typography.bodyMedium
+            )
+        }
     }
 }
 
