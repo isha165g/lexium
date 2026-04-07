@@ -21,6 +21,9 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.lexium.viewmodel.VocabViewModel
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.AssistChip
+import com.example.lexium.ai.AIEngine
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 fun findSentence(text: String, word: String): String {
     val sentences = text.split(Regex("[.!?]"))
@@ -35,7 +38,20 @@ fun getMeaning(word: String): String {
 }
 
 fun getContextMeaning(word: String, sentence: String): String {
-    return "In this sentence, \"$word\" describes something weak or unsupported."
+
+    // TEMP hybrid (AI-ready structure)
+    val lower = sentence.lowercase()
+
+    return when {
+        lower.contains("lack") ->
+            "\"$word\" refers to something weak or unsupported in this context."
+
+        lower.contains("increase") ->
+            "\"$word\" suggests something growing or strengthening."
+
+        else ->
+            "AI analysis: \"$word\" depends on how it is used in \"$sentence\""
+    }
 }
 
 fun getSynonyms(word: String): List<String> {
@@ -45,11 +61,20 @@ fun getSynonyms(word: String): List<String> {
     }
 }
 
+fun interpretMeaning(word: String): String {
+    return when (word.lowercase()) {
+        "tenuous" -> "weak or lacking strong support"
+        "ephemeral" -> "short-lived or temporary"
+        else -> "context-dependent"
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun OCRScreen() {
 
     val context = LocalContext.current
+    val aiEngine = remember { AIEngine(context) }
     var extractedText by remember { mutableStateOf("") }
     var selectedWordIndex by remember { mutableIntStateOf(-1) }
     var selectedWord by remember { mutableStateOf("") }
@@ -177,9 +202,24 @@ fun OCRScreen() {
                 onDismissRequest = { showSheet = false }
             ) {
 
-                val meaning = getMeaning(selectedWord)
-                val contextMeaning = getContextMeaning(selectedWord, selectedSentence)
-                val synonyms = getSynonyms(selectedWord)
+                val meaning = remember(selectedWord) { getMeaning(selectedWord) }
+                val synonyms = remember(selectedWord) { getSynonyms(selectedWord) }
+
+                var aiOutput by remember(selectedWord, selectedSentence) {
+                    mutableStateOf("Loading...")
+                }
+
+                LaunchedEffect(selectedWord, selectedSentence) {
+                    aiOutput = "Loading..."
+
+                    val query = aiEngine.buildQuery(selectedWord, selectedSentence)
+
+                    val result = withContext(Dispatchers.Default) {
+                        aiEngine.runModel(query)
+                    }
+
+                    aiOutput = result
+                }
 
                 Column(
                     modifier = Modifier
@@ -208,7 +248,7 @@ fun OCRScreen() {
                         style = MaterialTheme.typography.labelMedium
                     )
 
-                    Text(text = contextMeaning)
+                    Text(text = aiOutput)
 
                     Spacer(modifier = Modifier.height(12.dp))
 
