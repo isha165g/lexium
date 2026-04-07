@@ -116,9 +116,6 @@ fun OCRScreen() {
         }
     }
 
-    val meaning = getMeaning(selectedWord)
-    val contextMeaning = getContextMeaning(selectedWord, selectedSentence)
-
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -166,49 +163,14 @@ fun OCRScreen() {
                         val word = words.getOrNull(index) ?: ""
 
                         val sentence = findSentence(extractedText, word)
-                        val meaning = getMeaning(word)
 
                         selectedWord = word
                         selectedSentence = sentence
                         showSheet = true
-
-                        vocabViewModel.saveWord(
-                            word = word,
-                            meaning = meaning,
-                            sentence = sentence
-                        )
                     }
                 }
             )
         }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        Text(
-            text = "Selected Word: $selectedWord",
-            style = MaterialTheme.typography.bodyLarge
-        )
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        Text(
-            text = "Sentence: $selectedSentence",
-            style = MaterialTheme.typography.bodyMedium
-        )
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        Text(
-            text = "Meaning: $meaning",
-            style = MaterialTheme.typography.bodyMedium
-        )
-
-        Spacer(modifier = Modifier.height(4.dp))
-
-        Text(
-            text = "Context Meaning: $contextMeaning",
-            style = MaterialTheme.typography.bodyMedium
-        )
 
         if (showSheet) {
             ModalBottomSheet(
