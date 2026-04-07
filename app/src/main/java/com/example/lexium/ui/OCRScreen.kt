@@ -18,13 +18,31 @@ import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 
+fun findSentence(text: String, word: String): String {
+    val sentences = text.split(Regex("[.!?]"))
+    return sentences.find { it.contains(word, ignoreCase = true) }?.trim() ?: ""
+}
+
+fun getMeaning(word: String): String {
+    return when (word.lowercase()) {
+        "tenuous" -> "weak or lacking support"
+        "ephemeral" -> "lasting a short time"
+        else -> "Meaning not found"
+    }
+}
+
+fun getContextMeaning(word: String, sentence: String): String {
+    return "In this sentence, \"$word\" refers to something that fits the context: \"$sentence\""
+}
+
 @Composable
 fun OCRScreen() {
 
     val context = LocalContext.current
     var extractedText by remember { mutableStateOf("") }
-    var selectedWordIndex by remember { mutableStateOf(-1) }
+    var selectedWordIndex by remember { mutableIntStateOf(-1) }
     var selectedWord by remember { mutableStateOf("") }
+    var selectedSentence by remember { mutableStateOf("") }
 
     val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
 
@@ -84,6 +102,9 @@ fun OCRScreen() {
         }
     }
 
+    val meaning = getMeaning(selectedWord)
+    val contextMeaning = getContextMeaning(selectedWord, selectedSentence)
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -123,12 +144,18 @@ fun OCRScreen() {
                         start = offset,
                         end = offset
                     ).firstOrNull()?.let { annotation ->
+
                         val index = annotation.item.toInt()
                         selectedWordIndex = index
 
-                        // Update selected word text
                         val words = extractedText.split("\\s+".toRegex())
-                        selectedWord = words.getOrNull(index) ?: ""
+                        val word = words.getOrNull(index) ?: ""
+
+                        // 🔥 NEW LOGIC
+                        val sentence = findSentence(extractedText, word)
+
+                        selectedWord = word
+                        selectedSentence = sentence
                     }
                 }
             )
@@ -140,6 +167,28 @@ fun OCRScreen() {
             text = "Selected Word: $selectedWord",
             style = MaterialTheme.typography.bodyLarge
         )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Text(
+            text = "Sentence: $selectedSentence",
+            style = MaterialTheme.typography.bodyMedium
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Text(
+            text = "Meaning: $meaning",
+            style = MaterialTheme.typography.bodyMedium
+        )
+
+        Spacer(modifier = Modifier.height(4.dp))
+
+        Text(
+            text = "Context Meaning: $contextMeaning",
+            style = MaterialTheme.typography.bodyMedium
+        )
     }
 }
+
 
