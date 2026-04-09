@@ -15,4 +15,7 @@ interface VocabularyDao {
 
     @Query("SELECT * FROM vocabulary WHERE word = :word LIMIT 1")
     suspend fun getWord(word: String): Vocabulary?
+
+    @Delete
+    suspend fun deleteWord(vocab: Vocabulary)
 }

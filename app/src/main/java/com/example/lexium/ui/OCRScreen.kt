@@ -44,6 +44,37 @@ fun getSynonyms(word: String): List<String> {
     }
 }
 
+data class AIParsed(
+    val meaning: String = "",
+    val context: String = "",
+    val synonyms: List<String> = emptyList()
+)
+
+fun parseAIResponse(response: String): AIParsed {
+    var meaning = ""
+    var context = ""
+    var synonyms = emptyList<String>()
+
+    response.split("\n").forEach { line ->
+        when {
+            line.startsWith("Meaning:", true) -> {
+                meaning = line.substringAfter(":").trim()
+            }
+            line.startsWith("Context:", true) -> {
+                context = line.substringAfter(":").trim()
+            }
+            line.startsWith("Synonyms:", true) -> {
+                synonyms = line.substringAfter(":")
+                    .split(",")
+                    .map { it.trim() }
+                    .filter { it.isNotEmpty() }
+            }
+        }
+    }
+
+    return AIParsed(meaning, context, synonyms)
+}
+
 // ---------------- MAIN SCREEN ----------------
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -183,6 +214,11 @@ fun OCRScreen() {
 
                 var aiResponse by remember { mutableStateOf("Loading...") }
 
+                val parsed = remember(aiResponse) {
+                    if (aiResponse != "Loading...") parseAIResponse(aiResponse)
+                    else AIParsed()
+                }
+
                 LaunchedEffect(selectedWord, selectedSentence) {
                     aiResponse = "Loading..."
 
@@ -206,19 +242,28 @@ fun OCRScreen() {
 
                     // Dictionary Meaning
                     Text("Definition", style = MaterialTheme.typography.labelMedium)
-                    Text(text = meaning)
+
+                    when {
+                        aiResponse == "Loading..." -> {
+                            CircularProgressIndicator()
+                        }
+                        parsed.meaning.isNotEmpty() -> {
+                            Text(text = parsed.meaning)
+                        }
+                        meaning != "Meaning not found" -> {
+                            Text(text = meaning)
+                        }
+                    }
 
                     Spacer(modifier = Modifier.height(12.dp))
 
                     // AI Meaning
-                    Text("AI Explanation", style = MaterialTheme.typography.labelMedium)
+                    Text("Context Explanation", style = MaterialTheme.typography.labelMedium)
 
                     if (aiResponse == "Loading...") {
                         CircularProgressIndicator()
                     } else {
-                        aiResponse.split("\n").forEach {
-                            Text(text = it)
-                        }
+                        Text(text = parsed.context)
                     }
 
                     Spacer(modifier = Modifier.height(12.dp))
@@ -227,7 +272,10 @@ fun OCRScreen() {
                     Text("Synonyms", style = MaterialTheme.typography.labelMedium)
 
                     Row {
-                        synonyms.forEach { syn ->
+                        val finalSynonyms =
+                            parsed.synonyms.ifEmpty { synonyms }
+
+                        finalSynonyms.forEach { syn ->
                             AssistChip(
                                 onClick = {},
                                 label = { Text(syn) },

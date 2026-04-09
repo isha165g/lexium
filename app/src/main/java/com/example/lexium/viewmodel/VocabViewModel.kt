@@ -34,4 +34,10 @@ class VocabViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
     }
+
+    fun deleteWord(vocab: Vocabulary) {
+        viewModelScope.launch {
+            vocabDao.deleteWord(vocab)
+        }
+    }
 }

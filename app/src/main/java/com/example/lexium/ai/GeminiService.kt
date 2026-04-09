@@ -29,10 +29,11 @@ class GeminiService {
             Explain the word "$word" in the context of this sentence:
             "$sentence"
             
-            Give:
-            1. Meaning
-            2. Context explanation
-            3. 2 synonyms
+            Give response in STRICT format:
+
+            Meaning: <meaning>
+            Context: <explanation using given sentence>
+            Synonyms: <comma separated words>
             
             Keep it short.
         """.trimIndent()
