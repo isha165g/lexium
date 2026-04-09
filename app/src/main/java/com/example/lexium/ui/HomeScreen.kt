@@ -387,7 +387,7 @@ fun Footer() {
         )
         Spacer(modifier = Modifier.height(8.dp))
         Text(
-            text = "© 2024 LEXIUM. THE DIGITAL CURATOR.",
+            text = "© 2026 LEXIUM. THE DIGITAL CURATOR.",
             style = MaterialTheme.typography.labelSmall,
             color = Color(0xFFFCF9F8).copy(alpha = 0.5f)
         )

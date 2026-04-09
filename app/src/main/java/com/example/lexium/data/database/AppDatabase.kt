@@ -7,7 +7,7 @@ import com.example.lexium.data.dao.VocabularyDao
 import com.example.lexium.data.model.User
 import com.example.lexium.data.model.Vocabulary
 
-@Database(entities = [User::class, Vocabulary::class], version = 2)
+@Database(entities = [User::class, Vocabulary::class], version = 3)
 abstract class AppDatabase : RoomDatabase() {
 
     abstract fun userDao(): UserDao

@@ -20,15 +20,14 @@ class VocabViewModel(application: Application) : AndroidViewModel(application) {
             initialValue = emptyList()
         )
 
-    fun saveWord(word: String, meaning: String, sentence: String) {
+    fun saveWord(word: String, meaning: String) {
         viewModelScope.launch {
             val existing = vocabDao.getWord(word)
 
             if (existing == null) {
                 val vocab = Vocabulary(
                     word = word,
-                    meaning = meaning,
-                    sentence = sentence
+                    meaning = meaning
                 )
                 vocabDao.insertWord(vocab)
             }

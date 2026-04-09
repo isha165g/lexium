@@ -14,7 +14,7 @@ object DatabaseProvider {
                 AppDatabase::class.java,
                 "lexium_db"
             )
-                .fallbackToDestructiveMigration(false)
+                .fallbackToDestructiveMigration(true)
                 .build()
             INSTANCE = instance
             instance

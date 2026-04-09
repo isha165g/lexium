@@ -297,8 +297,7 @@ fun OCRScreen() {
 
                             vocabViewModel.saveWord(
                                 word = selectedWord,
-                                meaning = finalMeaning,
-                                sentence = selectedSentence
+                                meaning = finalMeaning
                             )
                         },
                         modifier = Modifier.fillMaxWidth()

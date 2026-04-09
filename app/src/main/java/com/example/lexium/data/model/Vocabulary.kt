@@ -10,7 +10,6 @@ data class Vocabulary(
 
     val word: String,
     val meaning: String,
-    val sentence: String,
 
     val difficulty: String = "Medium",
 

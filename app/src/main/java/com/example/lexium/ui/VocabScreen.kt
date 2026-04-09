@@ -61,13 +61,6 @@ fun VocabScreen() {
                                 text = vocab.meaning,
                                 style = MaterialTheme.typography.bodyMedium
                             )
-
-                            Spacer(modifier = Modifier.height(4.dp))
-
-                            Text(
-                                text = "\"${vocab.sentence}\"",
-                                style = MaterialTheme.typography.bodySmall
-                            )
                         }
 
                         IconButton(onClick = { viewModel.deleteWord(vocab) }) {
