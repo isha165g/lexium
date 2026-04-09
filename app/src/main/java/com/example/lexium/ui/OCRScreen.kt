@@ -288,15 +288,22 @@ fun OCRScreen() {
 
                     Button(
                         onClick = {
+
+                            val finalMeaning = when {
+                                parsed.meaning.isNotEmpty() -> parsed.meaning   // ✅ AI meaning (priority)
+                                meaning != "Meaning not found" -> meaning       // fallback dictionary
+                                else -> "No meaning available"
+                            }
+
                             vocabViewModel.saveWord(
                                 word = selectedWord,
-                                meaning = meaning,
+                                meaning = finalMeaning,
                                 sentence = selectedSentence
                             )
                         },
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text("Capture Word 📚")
+                        Text("Add to Vocabulary")
                     }
                 }
             }
