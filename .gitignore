@@ -1,9 +1,11 @@
-# Environment files
+# Environment files & Secrets
 .env
 .env.local
 .env.*.local
 .env.*
 *.env
+secrets/
+
 
 # Virtual Environments & Python files
 venv/
