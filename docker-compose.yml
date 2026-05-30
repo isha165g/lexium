@@ -1,0 +1,23 @@
+services:
+
+  postgres:
+    image: postgres:16
+    container_name: lexium_postgres
+
+    environment:
+      POSTGRES_USER: lexium
+      POSTGRES_PASSWORD: lexiumpassword
+      POSTGRES_DB: lexium_db
+      TZ: Asia/Kolkata
+      PGTZ: Asia/Kolkata
+
+    ports:
+      - "5432:5432"
+
+    command: postgres -c timezone=Asia/Kolkata
+
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:

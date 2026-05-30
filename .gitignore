@@ -1,0 +1,52 @@
+# Environment files
+.env
+.env.local
+.env.*.local
+.env.*
+*.env
+
+# Virtual Environments & Python files
+venv/
+.venv/
+env/
+ENV/
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+build/
+dist/
+
+# IDEs and Editors
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Databases
+*.db
+*.sqlite
+*.sqlite3
+
+# Android (for the android-app directory in workspace)
+.gradle/
+/android-app/build/
+/android-app/local.properties
+/android-app/out/
+/android-app/.gradle/
+/android-app/.navigation/
+/android-app/captures/
+*.apk
+*.ap_
