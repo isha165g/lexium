@@ -6,20 +6,23 @@ from app.models.user import User
 class UserService:
 
     @staticmethod
-    def create_user(
+    def get_or_create_user(
         db: Session,
         firebase_uid: str,
         email: str,
         full_name: str | None = None
     ):
-        existing_user = (
+
+        user = (
             db.query(User)
-            .filter(User.firebase_uid == firebase_uid)
+            .filter(
+                User.firebase_uid == firebase_uid
+            )
             .first()
         )
 
-        if existing_user:
-            return existing_user
+        if user:
+            return user
 
         user = User(
             firebase_uid=firebase_uid,
