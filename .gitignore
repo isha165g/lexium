@@ -5,6 +5,10 @@
 .env.*
 *.env
 secrets/
+*.pem
+*.key
+*.pfx
+*.p12
 
 
 # Virtual Environments & Python files
@@ -19,10 +23,13 @@ __pycache__/
 .eggs/
 .pytest_cache/
 .mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
 .coverage
 htmlcov/
 build/
 dist/
+pip-log.txt
 
 # IDEs and Editors
 .vscode/
@@ -32,15 +39,22 @@ dist/
 *.njsproj
 *.sln
 *.swp
+*~
+*.bak
+*.tmp
 
 # OS generated files
 .DS_Store
 Thumbs.db
+desktop.ini
+ehthumbs.db
 
 # Databases
 *.db
 *.sqlite
 *.sqlite3
+*.sqlite-journal
+*.sqlite3-journal
 
 # Android (for the android-app directory in workspace)
 .gradle/
@@ -52,3 +66,10 @@ Thumbs.db
 /android-app/captures/
 *.apk
 *.ap_
+
+# Postman
+.postman/
+postman/environments/
+
+# Logs
+*.log
