@@ -152,6 +152,18 @@ button {
   margin-top: auto;
 }
 
+.settings-sec {
+  margin-top: 8px;
+}
+
+.settings-sec .ghost-button {
+  width: 100%;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+}
+
 .main {
   padding: 32px;
   overflow-x: hidden;

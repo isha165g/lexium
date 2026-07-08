@@ -54,6 +54,7 @@ let revisionIndex = 0;
 let meaningRevealed = false;
 let revisionShuffled = false;
 let generatedEntry = null;
+let localServerStatus = { ok: false, hasGeminiKey: false };
 
 const elements = {
   tabs: document.querySelectorAll(".tab"),
@@ -138,7 +139,14 @@ const elements = {
   statPractice: document.querySelector("#statPractice"),
   statExamples: document.querySelector("#statExamples"),
   letterBoard: document.querySelector("#letterBoard"),
-  template: document.querySelector("#wordCardTemplate")
+  template: document.querySelector("#wordCardTemplate"),
+  settingsButton: document.querySelector("#settingsButton"),
+  settingsModal: document.querySelector("#settingsModal"),
+  closeSettingsModalBtn: document.querySelector("#closeSettingsModalBtn"),
+  settingsForm: document.querySelector("#settingsForm"),
+  settingsApiKeyInput: document.querySelector("#settingsApiKeyInput"),
+  clearApiKeyBtn: document.querySelector("#clearApiKeyBtn"),
+  aiNote: document.querySelector("#aiNote")
 };
 
 function loadEntries() {
@@ -554,6 +562,46 @@ async function generateWordDetails(word) {
 }
 
 async function fetchAiWordDetails(word) {
+  const customKey = localStorage.getItem(GEMINI_API_KEY_STORAGE_KEY);
+  
+  if (customKey) {
+    const model = "gemini-3.1-flash-lite";
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(customKey)}`;
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [
+          {
+            role: "user",
+            parts: [{ text: buildVocabularyPrompt(word) }]
+          }
+        ],
+        generationConfig: {
+          temperature: 0.25,
+          maxOutputTokens: 700,
+          responseMimeType: "application/json"
+        }
+      })
+    });
+    
+    const geminiData = await response.json();
+    if (!response.ok) {
+      const message = geminiData?.error?.message || "Gemini request failed.";
+      throw new Error(message);
+    }
+    
+    const text = geminiData?.candidates?.[0]?.content?.parts?.map((part) => part.text || "").join("\n").trim();
+    const entry = parseGeneratedEntry(text, word);
+    
+    return {
+      ...entry,
+      status: "new",
+      updatedAt: Date.now()
+    };
+  }
+
+  // Fallback to local server API endpoint if custom key is not configured
   const response = await fetch("/api/generate", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -1494,4 +1542,143 @@ document.addEventListener("click", (e) => {
   }
 });
 
+// Settings and API Key Management
+const GEMINI_API_KEY_STORAGE_KEY = "lexium.gemini.apikey";
+
+async function checkLocalServer() {
+  try {
+    const res = await fetch("/api/health");
+    if (res.ok) {
+      localServerStatus = await res.json();
+    } else {
+      localServerStatus = { ok: false, hasGeminiKey: false };
+    }
+  } catch (e) {
+    localServerStatus = { ok: false, hasGeminiKey: false };
+  }
+}
+
+function updateApiStatusDisplay() {
+  const customKey = localStorage.getItem(GEMINI_API_KEY_STORAGE_KEY);
+  if (customKey) {
+    elements.aiNote.textContent = "Gemini AI is active using your custom API key (direct client-side requests).";
+    elements.aiNote.style.color = "var(--green)";
+    elements.settingsApiKeyInput.value = customKey;
+  } else if (localServerStatus.ok && localServerStatus.hasGeminiKey) {
+    elements.aiNote.textContent = `Gemini AI is active using the local backend (Model: ${localServerStatus.model || 'Gemini'}).`;
+    elements.aiNote.style.color = "var(--teal-dark)";
+    elements.settingsApiKeyInput.value = "";
+  } else {
+    elements.aiNote.textContent = "Gemini AI is not configured. Lexium will fall back to the free dictionary API. Click 'Settings' below to add your Gemini key.";
+    elements.aiNote.style.color = "var(--muted)";
+    elements.settingsApiKeyInput.value = "";
+  }
+}
+
+function openSettingsModal() {
+  const customKey = localStorage.getItem(GEMINI_API_KEY_STORAGE_KEY) || "";
+  elements.settingsApiKeyInput.value = customKey;
+  elements.settingsModal.hidden = false;
+}
+
+function closeSettingsModal() {
+  elements.settingsModal.hidden = true;
+}
+
+function saveApiKey(event) {
+  event.preventDefault();
+  const key = elements.settingsApiKeyInput.value.trim();
+  if (key) {
+    localStorage.setItem(GEMINI_API_KEY_STORAGE_KEY, key);
+  } else {
+    localStorage.removeItem(GEMINI_API_KEY_STORAGE_KEY);
+  }
+  closeSettingsModal();
+  updateApiStatusDisplay();
+}
+
+function clearApiKey() {
+  localStorage.removeItem(GEMINI_API_KEY_STORAGE_KEY);
+  elements.settingsApiKeyInput.value = "";
+  closeSettingsModal();
+  updateApiStatusDisplay();
+}
+
+// Client-Side Gemini Prompt and Parsing logic (mirrors server.js)
+function buildVocabularyPrompt(word) {
+  return `Create a vocabulary-builder entry for the English word "${word}".
+
+Return only valid JSON with this exact shape:
+{
+  "word": "correct lowercase word",
+  "part": "Noun | Verb | Adjective | Adverb | Phrase | Word",
+  "meaning": "Detailed learner-friendly meaning.",
+  "examples": [
+    "Simple example sentence 1.",
+    "Simple example sentence 2.",
+    "Simple example sentence 3.",
+    "Simple example sentence 4."
+  ],
+  "synonyms": [
+    "synonym 1",
+    "synonym 2",
+    "synonym 3"
+  ],
+  "antonyms": [
+    "antonym 1",
+    "antonym 2",
+    "antonym 3"
+  ]
+}
+
+Meaning rules:
+- Write 3 to 5 short sentences.
+- Explain the common meaning first.
+- Add useful nuance, common context, or emotion if relevant.
+- Use plain English for a school student or English learner.
+- Avoid circular definitions.
+
+Example rules:
+- Sentences must be short, natural, and easy.
+- Each sentence must contain the word or a close grammatical form.
+- Use everyday situations.
+- Do not use difficult words in the examples.
+
+Synonyms and Antonyms rules:
+- Provide 2 to 4 high-quality synonyms and antonyms related to the context of the definition.
+- Keep them single words or short common phrases in lowercase.
+- If there are no clear antonyms or synonyms (e.g. for some highly abstract words or function words), return an empty array [].`;
+}
+
+function parseGeneratedEntry(text, fallbackWord) {
+  if (!text) throw new Error("Gemini returned an empty response.");
+
+  const cleaned = text.replace(/^```(?:json)?/i, "").replace(/```$/i, "").trim();
+  const data = JSON.parse(cleaned);
+
+  if (!data.word || !data.meaning || !Array.isArray(data.examples)) {
+    throw new Error("Gemini returned an incomplete vocabulary entry.");
+  }
+
+  return {
+    word: normalizeWord(data.word || fallbackWord),
+    part: titleCase(String(data.part || "Word")),
+    meaning: String(data.meaning).trim(),
+    examples: data.examples.map((example) => tidySentence(String(example))).filter(Boolean).slice(0, 4),
+    synonyms: Array.isArray(data.synonyms) ? data.synonyms.map((syn) => String(syn).trim().toLowerCase()).filter(Boolean).slice(0, 4) : [],
+    antonyms: Array.isArray(data.antonyms) ? data.antonyms.map((ant) => String(ant).trim().toLowerCase()).filter(Boolean).slice(0, 4) : []
+  };
+}
+
+elements.settingsButton.addEventListener("click", openSettingsModal);
+elements.closeSettingsModalBtn.addEventListener("click", closeSettingsModal);
+elements.settingsForm.addEventListener("submit", saveApiKey);
+elements.clearApiKeyBtn.addEventListener("click", clearApiKey);
+elements.settingsModal.addEventListener("click", (e) => {
+  if (e.target === elements.settingsModal) {
+    closeSettingsModal();
+  }
+});
+
 render();
+checkLocalServer().then(() => updateApiStatusDisplay());

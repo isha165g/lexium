@@ -60,6 +60,12 @@
           <input id="importInput" type="file" accept="application/json">
         </label>
       </div>
+
+      <div class="settings-sec">
+        <button class="ghost-button" id="settingsButton" type="button" title="Settings">
+          <span aria-hidden="true">⚙</span> Settings
+        </button>
+      </div>
     </aside>
 
     <main class="main">
@@ -86,7 +92,7 @@
               </div>
             </div>
             <p class="lookup-status" id="lookupStatus" role="status" aria-live="polite"></p>
-            <p class="ai-note">Gemini AI creates the meaning and simple sentences. If AI is unavailable, Lexium uses the
+            <p class="ai-note" id="aiNote">Gemini AI creates the meaning and simple sentences. If AI is unavailable, Lexium uses the
               free dictionary fallback.</p>
             <div class="generated-preview" id="generatedPreview" hidden>
               <span id="previewPart"></span>
@@ -318,6 +324,29 @@
         <div class="drawer-body" id="drawerBody"></div>
       </div>
     </div>
+
+  <div class="modal-overlay" id="settingsModal" hidden>
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>Settings</h3>
+        <button type="button" class="close-modal-btn" id="closeSettingsModalBtn">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="settingsForm">
+          <label for="settingsApiKeyInput">
+            <span>Gemini API Key</span>
+            <input id="settingsApiKeyInput" type="password" placeholder="Paste your API key (AIzaSy...)">
+          </label>
+          <p class="ai-note">Your key is stored only on your device (in localStorage) and is sent directly to Google. It never touches any other server.</p>
+          
+          <div class="editor-actions" style="margin-top: 12px; justify-content: flex-end;">
+            <button class="secondary-button" id="clearApiKeyBtn" type="button">Remove Key</button>
+            <button class="primary-button" id="saveApiKeyBtn" type="submit">Save Key</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
 
   <script src="app.js"></script>
 </body>
