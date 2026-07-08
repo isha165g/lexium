@@ -1,0 +1,325 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lexium</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" aria-label="Lexium navigation">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true">L</div>
+        <div>
+          <h1>Lexium</h1>
+          <p>Personal vocabulary</p>
+        </div>
+      </div>
+
+      <nav class="tabs" aria-label="Primary">
+        <button class="tab is-active" type="button" data-view="dictionary">
+          <span aria-hidden="true">Aa</span>
+          Dictionary
+        </button>
+        <button class="tab" type="button" data-view="watchlists">
+            <span aria-hidden="true">★</span>
+            Watchlists
+          </button>
+          <button class="tab" type="button" data-view="synonyms">
+            <span aria-hidden="true">≈</span>
+            Synonyms
+          </button>
+        <button class="tab" type="button" data-view="revise">
+          <span aria-hidden="true">↻</span>
+          Revise
+        </button>
+        <button class="tab" type="button" data-view="stats">
+          <span aria-hidden="true">#</span>
+          Stats
+        </button>
+      </nav>
+
+      <div class="sidebar-panel">
+        <div class="metric">
+          <span>Total words</span>
+          <strong id="wordCount">0</strong>
+        </div>
+        <div class="metric">
+          <span>Due today</span>
+          <strong id="dueCount">0</strong>
+        </div>
+      </div>
+
+      <div class="import-export">
+        <button class="ghost-button" id="exportButton" type="button" title="Export dictionary">Export</button>
+        <label class="ghost-button file-button" title="Import dictionary">
+          Import
+          <input id="importInput" type="file" accept="application/json">
+        </label>
+      </div>
+    </aside>
+
+    <main class="main">
+      <section class="view is-visible" id="dictionaryView" aria-labelledby="dictionaryTitle">
+        <header class="page-header">
+          <div>
+            <p class="eyebrow">Dictionary</p>
+            <h2 id="dictionaryTitle">Build your word bank</h2>
+          </div>
+          <button class="primary-button" id="newWordButton" type="button">+ New word</button>
+        </header>
+
+        <section class="entry-editor" id="entryEditor" aria-label="Word lookup">
+          <form id="wordForm">
+            <input type="hidden" id="entryId">
+            <div class="field-grid">
+              <label>
+                <span>Word</span>
+                <input id="wordInput" name="word" type="text" autocomplete="off" required placeholder="serendipity">
+              </label>
+              <div class="editor-actions inline-actions">
+                <button class="primary-button" id="saveWordButton" type="submit">Add word</button>
+                <button class="secondary-button" id="clearFormButton" type="button">Clear</button>
+              </div>
+            </div>
+            <p class="lookup-status" id="lookupStatus" role="status" aria-live="polite"></p>
+            <p class="ai-note">Gemini AI creates the meaning and simple sentences. If AI is unavailable, Lexium uses the
+              free dictionary fallback.</p>
+            <div class="generated-preview" id="generatedPreview" hidden>
+              <span id="previewPart"></span>
+              <small>Detailed meaning</small>
+              <strong id="previewMeaning"></strong>
+              <small>Simple examples</small>
+              <ul id="previewExamples"></ul>
+              <small data-label="synonyms" hidden>Synonyms</small>
+              <div class="preview-relations" id="previewSynonyms" hidden></div>
+              <small data-label="antonyms" hidden>Antonyms</small>
+              <div class="preview-relations" id="previewAntonyms" hidden></div>
+            </div>
+            <div class="editor-actions generated-actions" id="generatedActions" hidden>
+              <button class="primary-button" id="confirmGeneratedButton" type="button">Save to dictionary</button>
+              <button class="secondary-button" id="clearGeneratedButton" type="button">Discard</button>
+            </div>
+          </form>
+        </section>
+
+        <section class="toolbar" aria-label="Dictionary tools">
+          <label class="search-box">
+            <span aria-hidden="true">⌕</span>
+            <input id="searchInput" type="search" placeholder="Search words, meanings, examples">
+          </label>
+          <select id="sortInput" aria-label="Sort words">
+            <option value="az">A to Z</option>
+            <option value="za">Z to A</option>
+            <option value="recent">Recently added</option>
+            <option value="needsPractice">Needs practice</option>
+          </select>
+        </section>
+
+        <div class="alphabet-strip" id="alphabetStrip" aria-label="Alphabet filter"></div>
+        <section class="word-list" id="wordList" aria-live="polite"></section>
+      </section>
+
+      <section class="view revision-view" id="reviseView" aria-labelledby="reviseTitle">
+        <header class="page-header">
+          <div>
+            <p class="eyebrow">Revision</p>
+            <h2 id="reviseTitle">Practice recall</h2>
+          </div>
+          <button class="secondary-button" id="shuffleButton" type="button">Shuffle</button>
+        </header>
+
+        <div class="watchlist-revision-banner" id="watchlistRevisionBanner" hidden>
+          <span>Revising: <strong id="revisionWatchlistName">None</strong></span>
+          <button class="text-button" id="exitWatchlistRevisionBtn" type="button">Exit session</button>
+        </div>
+
+        <div class="watchlist-revision-banner letter-revision-banner" id="letterRevisionBanner" hidden>
+          <span>Revising letter: <strong id="revisionLetterName">—</strong></span>
+          <button class="text-button" id="exitLetterRevisionBtn" type="button">Exit session</button>
+        </div>
+
+        <article class="flashcard" id="flashcard">
+          <div class="flashcard-top">
+            <span id="cardPosition">0 / 0</span>
+            <span id="cardPart"></span>
+          </div>
+          <h3 id="cardWord">Add a word to begin</h3>
+          <p id="cardMeaning">Your revision cards will appear here.</p>
+          <ul id="cardExamples"></ul>
+          <div class="card-relations" id="cardRelations" hidden>
+            <div class="card-relations-group" id="cardSynonymsGroup" hidden>
+              <span class="relations-label">Synonyms</span>
+              <div class="relations-list" id="cardSynonyms"></div>
+            </div>
+            <div class="card-relations-group" id="cardAntonymsGroup" hidden>
+              <span class="relations-label">Antonyms</span>
+              <div class="relations-list" id="cardAntonyms"></div>
+            </div>
+          </div>
+        </article>
+
+        <div class="revision-actions">
+          <button class="secondary-button" id="prevCardButton" type="button">← Previous</button>
+          <button class="primary-button" id="revealButton" type="button">Reveal meaning</button>
+          <button class="secondary-button" id="nextCardButton" type="button">Next →</button>
+        </div>
+        <div class="revision-actions compact">
+          <button class="practice-button hard" id="hardButton" type="button">Need practice</button>
+          <button class="practice-button good" id="goodButton" type="button">Remembered</button>
+        </div>
+      </section>
+
+      <section class="view" id="statsView" aria-labelledby="statsTitle">
+        <header class="page-header">
+          <div>
+            <p class="eyebrow">Progress</p>
+            <h2 id="statsTitle">Your vocabulary map</h2>
+          </div>
+        </header>
+
+        <div class="stats-grid">
+          <article class="stat-card">
+            <span>Words saved</span>
+            <strong id="statTotal">0</strong>
+          </article>
+          <article class="stat-card">
+            <span>Remembered</span>
+            <strong id="statMastered">0</strong>
+          </article>
+          <article class="stat-card">
+            <span>Need practice</span>
+            <strong id="statPractice">0</strong>
+          </article>
+          <article class="stat-card">
+            <span>Examples written</span>
+            <strong id="statExamples">0</strong>
+          </article>
+        </div>
+
+        <section class="letter-board" id="letterBoard" aria-label="Words by first letter"></section>
+      </section>
+
+      <section class="view" id="watchlistsView" aria-labelledby="watchlistsTitle">
+          <header class="page-header">
+            <div>
+              <p class="eyebrow">Collections</p>
+              <h2 id="watchlistsTitle">Watchlists</h2>
+            </div>
+            <button class="primary-button" id="newWatchlistButton" type="button">+ New watchlist</button>
+          </header>
+          <div class="watchlists-layout">
+            <aside class="watchlists-list-panel">
+              <div class="watchlist-items" id="watchlistItems"></div>
+            </aside>
+            
+            <article class="watchlist-detail-panel" id="watchlistDetailPanel">
+              <div class="watchlist-detail-header">
+                <div>
+                  <h3 id="activeWatchlistName">Select or Create a Watchlist</h3>
+                  <div class="watchlist-meta-info">
+                    <span id="watchlistCount">0 words</span> &middot; <span id="watchlistPracticeCount">0 need practice</span>
+                  </div>
+                </div>
+                <div class="watchlist-actions" id="watchlistDetailActions" hidden>
+                  <button class="primary-button" id="reviseWatchlistButton" type="button">Revise cards</button>
+                  <button class="secondary-button" id="renameWatchlistButton" type="button">Rename</button>
+                  <button class="icon-button delete-watchlist-button" id="deleteWatchlistButton" type="button" title="Delete watchlist">&times;</button>
+                </div>
+              </div>
+              <div class="watchlist-add-word-sec" id="watchlistAddWordSec" hidden>
+                <label for="watchlistWordSearch">Add a word to this watchlist</label>
+                <div class="watchlist-add-wrapper">
+                  <div class="search-select-container">
+                    <input id="watchlistWordSearch" type="text" autocomplete="off" placeholder="Search words in dictionary...">
+                    <div class="search-select-dropdown" id="watchlistWordDropdown" hidden></div>
+                  </div>
+                </div>
+              </div>
+              <section class="word-list" id="watchlistWordList"></section>
+            </article>
+          </div>
+        </section>
+        <section class="view" id="synonymsView" aria-labelledby="synonymsTitle">
+          <header class="page-header">
+            <div>
+              <p class="eyebrow">Grouping</p>
+              <h2 id="synonymsTitle">Words by synonym</h2>
+            </div>
+          </header>
+          <section class="toolbar" aria-label="Synonyms tools">
+            <label class="search-box">
+              <span aria-hidden="true">⌕</span>
+              <input id="synonymsSearchInput" type="search" placeholder="Search synonym groups">
+            </label>
+          </section>
+          <div class="synonym-groups-grid" id="synonymGroupsGrid"></div>
+        </section>
+    </main>
+  </div>
+
+  <template id="wordCardTemplate">
+    <article class="word-card">
+      <div class="word-card-header">
+        <div>
+          <h3></h3>
+          <span class="part-tag"></span>
+        </div>
+        <div class="card-actions">
+          <button type="button" class="icon-button watchlist-toggle-button" title="Manage watchlists">★</button>
+          <button type="button" class="icon-button edit-button" title="Refresh details">↻</button>
+          <button type="button" class="icon-button delete-button" title="Delete word">×</button>
+        </div>
+      </div>
+      <p class="meaning"></p>
+      <ul class="examples"></ul>
+      <div class="word-relations" hidden>
+        <div class="relations-group synonyms-group" hidden>
+          <span class="relations-label">Synonyms</span>
+          <div class="relations-list synonyms-list"></div>
+        </div>
+        <div class="relations-group antonyms-group" hidden>
+          <span class="relations-label">Antonyms</span>
+          <div class="relations-list antonyms-list"></div>
+        </div>
+      </div>
+      <div class="word-meta">
+        <span class="status-pill"></span>
+        <button type="button" class="text-button toggle-status"></button>
+      </div>
+    </article>
+  </template>
+
+  <div class="modal-overlay" id="watchlistSelectorModal" hidden>
+      <div class="modal-card select-watchlist-card">
+        <div class="modal-header">
+          <h3>Add/Remove Watchlists</h3>
+          <button type="button" class="close-modal-btn" id="closeWatchlistModalBtn">&times;</button>
+        </div>
+        <div class="modal-body">
+          <p class="modal-subtitle">Manage watchlists for <strong id="watchlistWordTarget"></strong>:</p>
+          <div class="watchlist-checkbox-list" id="watchlistCheckboxList"></div>
+          <div class="quick-create-watchlist">
+            <input type="text" id="quickWatchlistName" placeholder="New watchlist name...">
+            <button class="secondary-button" id="quickWatchlistCreateBtn" type="button">Create</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-overlay drawer-overlay" id="wordDetailDrawer" hidden>
+      <div class="drawer-panel">
+        <div class="drawer-header">
+          <h3>Word Details</h3>
+          <button type="button" class="close-modal-btn" id="closeDrawerBtn">&times;</button>
+        </div>
+        <div class="drawer-body" id="drawerBody"></div>
+      </div>
+    </div>
+
+  <script src="app.js"></script>
+</body>
+
+</html>

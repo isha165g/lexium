@@ -1,75 +1,56 @@
-# Environment files & Secrets
+# Dependencies
+node_modules/
+jspm_packages/
+web_modules/
+
+# Environment files and secrets
 .env
 .env.local
-.env.*.local
-.env.*
+.env.development.local
+.env.test.local
+.env.production.local
+.env.backup
+.env.sample
 *.env
-secrets/
+*.env.*
+.env*.local
+
+# API keys and credentials
+credentials.json
+client_secret.json
 *.pem
 *.key
-*.pfx
 *.p12
 
+# Debug logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
 
-# Virtual Environments & Python files
-venv/
-.venv/
-env/
-ENV/
-__pycache__/
-*.py[cod]
-*$py.class
-*.egg-info/
-.eggs/
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
-.ipynb_checkpoints/
-.coverage
-htmlcov/
-build/
+# Diagnostic reports
+report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+
+# Output / Build directories
 dist/
-pip-log.txt
+build/
+out/
+.next/
+.nuxt/
 
 # IDEs and Editors
-.vscode/
+.vscode/*
+!.vscode/extensions.json
 .idea/
 *.suo
 *.ntvs*
 *.njsproj
 *.sln
 *.swp
-*~
-*.bak
-*.tmp
 
-# OS generated files
+# System Files
 .DS_Store
 Thumbs.db
-desktop.ini
-ehthumbs.db
-
-# Databases
-*.db
-*.sqlite
-*.sqlite3
-*.sqlite-journal
-*.sqlite3-journal
-
-# Android (for the android-app directory in workspace)
-.gradle/
-/android-app/build/
-/android-app/local.properties
-/android-app/out/
-/android-app/.gradle/
-/android-app/.navigation/
-/android-app/captures/
-*.apk
-*.ap_
-
-# Postman
-.postman/
-postman/environments/
-
-# Logs
-*.log
