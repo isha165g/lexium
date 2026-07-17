@@ -19,6 +19,7 @@ import {
   createId,
   statusLabel,
   statusRank,
+  normalizeWord
 } 
 from "./shared/helper.js";
 
@@ -26,6 +27,14 @@ import {
     generateWordDetails
 }
 from "./services/dictionaryService.js";
+
+import {
+    saveGeneratedEntry,
+    deleteEntry,
+    refreshEntry,
+    markCurrent
+}
+from "./services/dictionaryManager.js";
 
 const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
 
@@ -319,8 +328,51 @@ function renderWords() {
       e.stopPropagation();
       openWatchlistSelector(entry.id);
     });
-    card.querySelector(".edit-button").addEventListener("click", () => refreshEntry(entry.id));
-    card.querySelector(".delete-button").addEventListener("click", () => deleteEntry(entry.id));
+    card.querySelector(".edit-button").addEventListener("click", async () => {
+
+        setLookupStatus(`Refreshing "${entry.word}"...`);
+
+        try {
+
+            const result = await refreshEntry({
+                entries,
+                id: entry.id
+            });
+
+            entries = result.entries;
+
+            revisionShuffled = false;
+
+            render();
+
+            setLookupStatus(result.message);
+
+        } catch (error) {
+
+            setLookupStatus(error.message);
+
+        }
+
+    });
+    card.querySelector(".delete-button").addEventListener("click", () => {
+
+        const confirmed = confirm(`Delete "${entry.word}" from Lexium?`);
+
+        if (!confirmed) return;
+
+        const result = deleteEntry({
+            entries,
+            watchlists,
+            id: entry.id
+        });
+
+        entries = result.entries;
+        watchlists = result.watchlists;
+
+        revisionShuffled = false;
+
+        render();
+    });
     elements.wordList.append(card);
   });
 }
@@ -607,61 +659,22 @@ function setLookupBusy(isBusy) {
   elements.saveWordButton.textContent = isBusy ? "Finding..." : "Add word";
 }
 
-function saveGeneratedEntry() {
-  if (!generatedEntry) return;
-  const word = generatedEntry.word;
+const result = saveGeneratedEntry({
+    entries,
+    generatedEntry,
+    entryId: elements.entryId.value
+});
 
-  const duplicate = entries.find((entry) => entry.word.toLowerCase() === word.toLowerCase() && entry.id !== elements.entryId.value);
-  if (duplicate) {
-    entries = entries.map((entry) => entry.id === duplicate.id ? { ...entry, ...generatedEntry, id: duplicate.id, createdAt: duplicate.createdAt } : entry);
-  } else {
-    entries.push({
-      id: createId(),
-      ...generatedEntry,
-      createdAt: Date.now()
-    });
-  }
+entries = result.entries;
 
-  revisionShuffled = false;
-  saveEntries(entries);
-  setLookupStatus(`Saved "${word}" to your dictionary.`);
-  clearForm(false);
-  render();
-}
+revisionShuffled = false;
 
-async function refreshEntry(id) {
-  const entry = entries.find((item) => item.id === id);
-  if (!entry) return;
+clearForm(false);
 
-  const cardWord = entry.word;
-  setLookupStatus(`Refreshing "${cardWord}"...`);
-  try {
-    const refreshed = await generateWordDetails(cardWord);
-    entries = entries.map((item) => item.id === id ? { ...item, ...refreshed, id, createdAt: item.createdAt, status: item.status } : item);
-    revisionShuffled = false;
-    saveEntries(entries);
-    setLookupStatus(`Refreshed "${cardWord}".`);
-    render();
-  } catch (error) {
-    setLookupStatus(error.message || `Could not refresh "${cardWord}".`);
-  }
-}
+render();
 
-function deleteEntry(id) {
-  const entry = entries.find((item) => item.id === id);
-  if (!entry) return;
-  const confirmed = confirm(`Delete "${entry.word}" from Lexium?`);
-  if (!confirmed) return;
-  entries = entries.filter((item) => item.id !== id);
-  // Clean up references in watchlists
-  watchlists.forEach(wl => {
-    wl.wordIds = wl.wordIds.filter(wordId => wordId !== id);
-  });
-  saveWatchlists(watchlists);
-  revisionShuffled = false;
-  saveEntries(entries);
-  render();
-}
+setLookupStatus(result.message);
+
 
 function clearForm(clearStatus = true) {
   elements.wordForm.reset();
@@ -676,15 +689,6 @@ function moveCard(direction) {
   revisionIndex = (revisionIndex + direction + revisionDeck.length) % revisionDeck.length;
   meaningRevealed = false;
   renderRevision();
-}
-
-function markCurrent(status) {
-  const entry = revisionDeck[revisionIndex];
-  if (!entry) return;
-  entries = entries.map((item) => item.id === entry.id ? { ...item, status, updatedAt: Date.now() } : item);
-  saveEntries(entries);
-  moveCard(1);
-  render();
 }
 
 function shuffleDeck() {
@@ -1200,12 +1204,47 @@ function showWordDetails(wordId) {
   });
   card.querySelector(".edit-button").addEventListener("click", async () => {
     elements.wordDetailDrawer.hidden = true;
-    await refreshEntry(entry.id);
+    setLookupStatus(`Refreshing "${entry.word}"...`);
+    try {
+
+        const result = await refreshEntry({
+            entries,
+            id: entry.id
+        });
+
+        entries = result.entries;
+
+        revisionShuffled = false;
+
+        render();
+
+        setLookupStatus(result.message);
+
+    } catch (error) {
+
+        setLookupStatus(error.message);
+
+    }
   });
   
   card.querySelector(".delete-button").addEventListener("click", () => {
     elements.wordDetailDrawer.hidden = true;
-    deleteEntry(entry.id);
+    const confirmed = confirm(`Delete "${entry.word}" from Lexium?`);
+
+    if (!confirmed) return;
+
+    const result = deleteEntry({
+        entries,
+        watchlists,
+        id: entry.id
+    });
+
+    entries = result.entries;
+    watchlists = result.watchlists;
+
+    revisionShuffled = false;
+
+    render();
   });
   
   card.querySelector(".watchlist-toggle-button").addEventListener("click", (e) => {
@@ -1226,7 +1265,25 @@ function render() {
 
 elements.tabs.forEach((tab) => tab.addEventListener("click", () => switchView(tab.dataset.view)));
 elements.wordForm.addEventListener("submit", lookupEntry);
-elements.confirmGeneratedButton.addEventListener("click", saveGeneratedEntry);
+elements.confirmGeneratedButton.addEventListener("click", () => {
+    const result = saveGeneratedEntry({
+        entries,
+        generatedEntry,
+        entryId: elements.entryId.value
+    });
+
+    if (!result.saved) return;
+
+    entries = result.entries;
+
+    revisionShuffled = false;
+
+    clearForm(false);
+
+    render();
+
+    setLookupStatus(result.message);
+});
 elements.clearGeneratedButton.addEventListener("click", clearForm);
 elements.clearFormButton.addEventListener("click", clearForm);
 elements.newWordButton.addEventListener("click", () => {
@@ -1242,8 +1299,43 @@ elements.revealButton.addEventListener("click", () => {
   renderRevision();
 });
 elements.shuffleButton.addEventListener("click", shuffleDeck);
-elements.hardButton.addEventListener("click", () => markCurrent("practice"));
-elements.goodButton.addEventListener("click", () => markCurrent("mastered"));
+elements.hardButton.addEventListener("click", () => {
+
+    const entry = revisionDeck[revisionIndex];
+    if (!entry) return;
+
+    const result = markCurrent({
+        entries,
+        entryId: entry.id,
+        status: "practice"
+    });
+
+    entries = result.entries;
+
+    moveCard(1);
+
+    render();
+
+});
+
+elements.goodButton.addEventListener("click", () => {
+
+    const entry = revisionDeck[revisionIndex];
+    if (!entry) return;
+
+    const result = markCurrent({
+        entries,
+        entryId: entry.id,
+        status: "mastered"
+    });
+
+    entries = result.entries;
+
+    moveCard(1);
+
+    render();
+
+});
 elements.exportButton.addEventListener("click", exportDictionary);
 elements.importInput.addEventListener("change", importDictionary);
 
