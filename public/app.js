@@ -36,6 +36,16 @@ import {
 }
 from "./services/dictionaryManager.js";
 
+import {
+    createWatchlist,
+    renameWatchlist,
+    deleteWatchlist,
+    addWordToWatchlist,
+    removeWordFromWatchlist,
+    calculateSynonymGroups
+}
+from "./services/watchlistService.js";
+
 const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
 
 const sampleEntries = [
@@ -659,23 +669,6 @@ function setLookupBusy(isBusy) {
   elements.saveWordButton.textContent = isBusy ? "Finding..." : "Add word";
 }
 
-const result = saveGeneratedEntry({
-    entries,
-    generatedEntry,
-    entryId: elements.entryId.value
-});
-
-entries = result.entries;
-
-revisionShuffled = false;
-
-clearForm(false);
-
-render();
-
-setLookupStatus(result.message);
-
-
 function clearForm(clearStatus = true) {
   elements.wordForm.reset();
   elements.entryId.value = "";
@@ -873,7 +866,11 @@ function renderWatchlists() {
       removeBtn.innerHTML = "&times;";
       removeBtn.addEventListener("click", (e) => {
         e.stopPropagation();
-        removeWordFromWatchlist(entry.id, activeWatchlist.id);
+        watchlists = removeWordFromWatchlist({
+          watchlists,
+          wordId: entry.id,
+          watchlistId: activeWatchlist.id
+        });
       });
       
       item.append(details, removeBtn);
@@ -881,6 +878,7 @@ function renderWatchlists() {
     });
   }
 }
+
 function handleWatchlistWordSearch() {
   const query = elements.watchlistWordSearch.value.trim().toLowerCase();
   const activeWatchlist = watchlists.find(w => w.id === activeWatchlistId);
@@ -919,7 +917,11 @@ function handleWatchlistWordSearch() {
       
       item.append(name, part);
       item.addEventListener("click", () => {
-        addWordToWatchlist(entry.id, activeWatchlist.id);
+        watchlists = addWordToWatchlist({
+          watchlists,
+          wordId: entry.id,
+          watchlistId: activeWatchlist.id
+        });
         elements.watchlistWordSearch.value = "";
         elements.watchlistWordDropdown.hidden = true;
       });
@@ -928,67 +930,48 @@ function handleWatchlistWordSearch() {
   }
   elements.watchlistWordDropdown.hidden = false;
 }
+
 function handleCreateWatchlist() {
-  const name = prompt("Enter watchlist name:");
-  if (!name) return;
-  const cleanName = name.trim();
-  if (!cleanName) return;
-  
-  if (watchlists.some(w => w.name.toLowerCase() === cleanName.toLowerCase())) {
-    alert("A watchlist with this name already exists.");
-    return;
-  }
-  const newWl = {
-    id: `watchlist-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-    name: cleanName,
-    wordIds: [],
-    createdAt: Date.now()
-  };
-  watchlists.push(newWl);
-  saveWatchlists(watchlists);
-  activeWatchlistId = newWl.id;
-  renderWatchlists();
+    const name = prompt("Enter watchlist name:");
+    if (!name) return;
+    const result = createWatchlist({
+        watchlists,
+        name
+    });
+
+    if (!result.success) {
+        alert(result.message);
+        return;
+    }
+
+    watchlists = result.watchlists;
+    activeWatchlistId = result.watchlist.id;
+    renderWatchlists();
 }
+
 function handleRenameWatchlist() {
-  const activeWatchlist = watchlists.find(w => w.id === activeWatchlistId);
-  if (!activeWatchlist) return;
-  const name = prompt("Rename watchlist:", activeWatchlist.name);
-  if (!name) return;
-  const cleanName = name.trim();
-  if (!cleanName || cleanName === activeWatchlist.name) return;
-  if (watchlists.some(w => w.name.toLowerCase() === cleanName.toLowerCase() && w.id !== activeWatchlistId)) {
-    alert("A watchlist with this name already exists.");
-    return;
-  }
-  activeWatchlist.name = cleanName;
-  saveWatchlists(watchlists);
-  renderWatchlists();
-}
-function handleDeleteWatchlist() {
-  const activeWatchlist = watchlists.find(w => w.id === activeWatchlistId);
-  if (!activeWatchlist) return;
-  if (!confirm(`Are you sure you want to delete the watchlist "${activeWatchlist.name}"?`)) return;
-  watchlists = watchlists.filter(w => w.id !== activeWatchlistId);
-  saveWatchlists(watchlists);
-  activeWatchlistId = watchlists.length ? watchlists[0].id : null;
-  renderWatchlists();
-}
-function addWordToWatchlist(wordId, watchlistId) {
-  const wl = watchlists.find(w => w.id === watchlistId);
-  if (wl && !wl.wordIds.includes(wordId)) {
-    wl.wordIds.push(wordId);
-    saveWatchlists(watchlists);
+    const activeWatchlist = watchlists.find(
+        w => w.id === activeWatchlistId
+    );
+    if (!activeWatchlist) return;
+    const name = prompt(
+        "Rename watchlist:",
+        activeWatchlist.name
+    );
+    if (!name) return;
+    const result = renameWatchlist({
+        watchlists,
+        watchlistId: activeWatchlistId,
+        newName: name
+    });
+    if (!result.success) {
+        alert(result.message);
+        return;
+    }
+    watchlists = result.watchlists;
     renderWatchlists();
-  }
 }
-function removeWordFromWatchlist(wordId, watchlistId) {
-  const wl = watchlists.find(w => w.id === watchlistId);
-  if (wl) {
-    wl.wordIds = wl.wordIds.filter(id => id !== wordId);
-    saveWatchlists(watchlists);
-    renderWatchlists();
-  }
-}
+
 function openWatchlistSelector(wordId) {
   const entry = entries.find(e => e.id === wordId);
   if (!entry) return;
@@ -1004,15 +987,22 @@ function openWatchlistSelector(wordId) {
     checkbox.type = "checkbox";
     checkbox.checked = wl.wordIds.includes(wordId);
     checkbox.addEventListener("change", () => {
-      if (checkbox.checked) {
-        if (!wl.wordIds.includes(wordId)) wl.wordIds.push(wordId);
-      } else {
-        wl.wordIds = wl.wordIds.filter(id => id !== wordId);
-      }
-      saveWatchlists(watchlists);
-      renderWatchlists();
+        if (checkbox.checked) {
+            watchlists = addWordToWatchlist({
+                watchlists,
+                wordId,
+                watchlistId: wl.id
+            });
+        } else {
+            watchlists = removeWordFromWatchlist({
+                watchlists,
+                wordId,
+                watchlistId: wl.id
+            });
+        }
+        openWatchlistSelector(wordId);
     });
-    
+
     const span = document.createElement("span");
     span.textContent = wl.name;
     
@@ -1022,68 +1012,65 @@ function openWatchlistSelector(wordId) {
   elements.quickWatchlistName.value = "";
   elements.watchlistSelectorModal.hidden = false;
 }
+
 function handleQuickWatchlistCreate() {
-  const name = elements.quickWatchlistName.value.trim();
-  if (!name) return;
-  
-  if (watchlists.some(w => w.name.toLowerCase() === name.toLowerCase())) {
-    alert("A watchlist with this name already exists.");
-    return;
-  }
-  const newWl = {
-    id: `watchlist-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-    name: name,
-    wordIds: activeSelectorWordId ? [activeSelectorWordId] : [],
-    createdAt: Date.now()
-  };
-  watchlists.push(newWl);
-  saveWatchlists(watchlists);
-  elements.quickWatchlistName.value = "";
-  
-  if (activeSelectorWordId) {
-    openWatchlistSelector(activeSelectorWordId);
-  }
-  renderWatchlists();
-}
-function calculateSynonymGroups() {
-  const groups = {};
-  
-  entries.forEach(entry => {
-    const wordLower = entry.word.toLowerCase();
+    const name = elements.quickWatchlistName.value.trim();
+    if (!name) return;
+    const result = createWatchlist({
+        watchlists,
+        name,
+        wordIds: activeSelectorWordId
+            ? [activeSelectorWordId]
+            : []
+    });
     
-    if (!groups[wordLower]) groups[wordLower] = new Set();
-    groups[wordLower].add(entry);
-    if (entry.synonyms && Array.isArray(entry.synonyms)) {
-      entry.synonyms.forEach(syn => {
-        const synLower = syn.trim().toLowerCase();
-        if (synLower) {
-          if (!groups[synLower]) groups[synLower] = new Set();
-          groups[synLower].add(entry);
-        }
-      });
+    if (!result.success) {
+        alert(result.message);
+        return;
     }
-  });
-  const groupList = [];
-  const searchQuery = elements.synonymsSearchInput.value.trim().toLowerCase();
-  for (const synonym in groups) {
-    const words = Array.from(groups[synonym]);
-    if (words.length >= 2) {
-      const matchesSearch = !searchQuery || 
-                            synonym.includes(searchQuery) || 
-                            words.some(e => e.word.toLowerCase().includes(searchQuery));
-      
-      if (matchesSearch) {
-        groupList.push({
-          synonym,
-          words: words.sort((a, b) => a.word.localeCompare(b.word))
-        });
-      }
-    }
-  }
-  return groupList.sort((a, b) => b.words.length - a.words.length || a.synonym.localeCompare(b.synonym));
+    watchlists = result.watchlists;
+    activeWatchlistId = result.watchlist.id;
+    elements.quickWatchlistName.value = "";
+    openWatchlistSelector(activeSelectorWordId);
+    renderWatchlists();
+
 }
+
+function handleDeleteWatchlist() {
+
+    const activeWatchlist = watchlists.find(
+        w => w.id === activeWatchlistId
+    );
+
+    if (!activeWatchlist) return;
+
+    if (
+        !confirm(
+            `Are you sure you want to delete the watchlist "${activeWatchlist.name}"?`
+        )
+    ) {
+        return;
+    }
+
+    watchlists = deleteWatchlist({
+        watchlists,
+        watchlistId: activeWatchlistId
+    });
+
+    activeWatchlistId =
+        watchlists.length
+            ? watchlists[0].id
+            : null;
+
+    renderWatchlists();
+}
+
+
 function renderSynonyms() {
-  const groups = calculateSynonymGroups();
+  const groups = calculateSynonymGroups({
+    entries,
+    searchQuery: elements.synonymsSearchInput.value
+  });
   elements.synonymGroupsGrid.innerHTML = "";
   if (!groups.length) {
     elements.synonymGroupsGrid.innerHTML = `<div class="empty-state">No synonym groups found. Add more words with overlapping synonyms (e.g. synonyms that are also dictionary entries or shared across entries).</div>`;
