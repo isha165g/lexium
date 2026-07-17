@@ -3,8 +3,18 @@ import {
     health
 } from "./api/lexiumApi.js";
 
-const STORAGE_KEY = "lexium.dictionary.v1";
-const WATCHLISTS_STORAGE_KEY = "lexium.watchlists.v1";
+import {
+    loadEntries,
+    saveEntries
+}
+from "./storage/dictionaryStorage.js";
+
+import {
+    loadWatchlists,
+    saveWatchlists
+}
+from "./storage/watchlistStorage.js";
+
 const DICTIONARY_API = "https://api.dictionaryapi.dev/api/v2/entries/en/";
 const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
 
@@ -46,8 +56,16 @@ const sampleEntries = [
   }
 ];
 
-let entries = loadEntries();
-let watchlists = loadWatchlists();
+let entries = loadEntries(sampleEntries);
+let watchlists =
+    loadWatchlists([
+        {
+            id: "watchlist-starred",
+            name: "Starred",
+            wordIds: [],
+            createdAt: Date.now()
+        }
+    ]);
 let activeWatchlistId = watchlists.length ? watchlists[0].id : null;
 let revisionWatchlistId = null;
 let revisionLetter = null;
@@ -153,42 +171,6 @@ const elements = {
   clearApiKeyBtn: document.querySelector("#clearApiKeyBtn"),
   aiNote: document.querySelector("#aiNote")
 };
-
-function loadEntries() {
-  try {
-    const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
-    return Array.isArray(stored) && stored.length ? stored : sampleEntries;
-  } catch {
-    return sampleEntries;
-  }
-}
-
-function loadWatchlists() {
-  try {
-    const stored = JSON.parse(localStorage.getItem(WATCHLISTS_STORAGE_KEY) || "[]");
-    if (Array.isArray(stored) && stored.length) {
-      return stored;
-    }
-  } catch (e) {
-    console.error("Failed to load watchlists", e);
-  }
-  return [
-    {
-      id: "watchlist-starred",
-      name: "Starred",
-      wordIds: [],
-      createdAt: Date.now()
-    }
-  ];
-}
-
-function persist() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
-}
-
-function persistWatchlists() {
-  localStorage.setItem(WATCHLISTS_STORAGE_KEY, JSON.stringify(watchlists));
-}
 
 function normalizeWord(word) {
   return word.trim().replace(/\s+/g, " ");
@@ -333,7 +315,7 @@ function renderWords() {
     toggle.addEventListener("click", () => {
       entry.status = entry.status === "mastered" ? "practice" : "mastered";
       entry.updatedAt = Date.now();
-      persist();
+      saveEntries(entries);
       render();
     });
 
@@ -569,10 +551,6 @@ async function generateWordDetails(word) {
 async function fetchAiWordDetails(word) {
   const data = await generateWord(word);
 
-  if (!response.ok) {
-    throw new Error(data.error || "AI generation failed.");
-  }
-
   return {
     ...data,
     status: "new",
@@ -802,7 +780,7 @@ function saveGeneratedEntry() {
   }
 
   revisionShuffled = false;
-  persist();
+  saveEntries(entries);
   setLookupStatus(`Saved "${word}" to your dictionary.`);
   clearForm(false);
   render();
@@ -818,7 +796,7 @@ async function refreshEntry(id) {
     const refreshed = await generateWordDetails(cardWord);
     entries = entries.map((item) => item.id === id ? { ...item, ...refreshed, id, createdAt: item.createdAt, status: item.status } : item);
     revisionShuffled = false;
-    persist();
+    saveEntries(entries);
     setLookupStatus(`Refreshed "${cardWord}".`);
     render();
   } catch (error) {
@@ -836,9 +814,9 @@ function deleteEntry(id) {
   watchlists.forEach(wl => {
     wl.wordIds = wl.wordIds.filter(wordId => wordId !== id);
   });
-  persistWatchlists();
+  saveWatchlists(watchlists);
   revisionShuffled = false;
-  persist();
+  saveEntries(entries);
   render();
 }
 
@@ -861,7 +839,7 @@ function markCurrent(status) {
   const entry = revisionDeck[revisionIndex];
   if (!entry) return;
   entries = entries.map((item) => item.id === entry.id ? { ...item, status, updatedAt: Date.now() } : item);
-  persist();
+  saveEntries(entries);
   moveCard(1);
   render();
 }
@@ -946,8 +924,8 @@ function importDictionary(event) {
       }
 
       revisionShuffled = false;
-      persist();
-      persistWatchlists();
+      saveEntries(entries);
+      saveWatchlists(watchlists);
       render();
     } catch {
       alert("That file does not look like a Lexium dictionary export.");
@@ -1120,7 +1098,7 @@ function handleCreateWatchlist() {
     createdAt: Date.now()
   };
   watchlists.push(newWl);
-  persistWatchlists();
+  saveWatchlists(watchlists);
   activeWatchlistId = newWl.id;
   renderWatchlists();
 }
@@ -1136,7 +1114,7 @@ function handleRenameWatchlist() {
     return;
   }
   activeWatchlist.name = cleanName;
-  persistWatchlists();
+  saveWatchlists(watchlists);
   renderWatchlists();
 }
 function handleDeleteWatchlist() {
@@ -1144,7 +1122,7 @@ function handleDeleteWatchlist() {
   if (!activeWatchlist) return;
   if (!confirm(`Are you sure you want to delete the watchlist "${activeWatchlist.name}"?`)) return;
   watchlists = watchlists.filter(w => w.id !== activeWatchlistId);
-  persistWatchlists();
+  saveWatchlists(watchlists);
   activeWatchlistId = watchlists.length ? watchlists[0].id : null;
   renderWatchlists();
 }
@@ -1152,7 +1130,7 @@ function addWordToWatchlist(wordId, watchlistId) {
   const wl = watchlists.find(w => w.id === watchlistId);
   if (wl && !wl.wordIds.includes(wordId)) {
     wl.wordIds.push(wordId);
-    persistWatchlists();
+    saveWatchlists(watchlists);
     renderWatchlists();
   }
 }
@@ -1160,7 +1138,7 @@ function removeWordFromWatchlist(wordId, watchlistId) {
   const wl = watchlists.find(w => w.id === watchlistId);
   if (wl) {
     wl.wordIds = wl.wordIds.filter(id => id !== wordId);
-    persistWatchlists();
+    saveWatchlists(watchlists);
     renderWatchlists();
   }
 }
@@ -1184,7 +1162,7 @@ function openWatchlistSelector(wordId) {
       } else {
         wl.wordIds = wl.wordIds.filter(id => id !== wordId);
       }
-      persistWatchlists();
+      saveWatchlists(watchlists);
       renderWatchlists();
     });
     
@@ -1212,7 +1190,7 @@ function handleQuickWatchlistCreate() {
     createdAt: Date.now()
   };
   watchlists.push(newWl);
-  persistWatchlists();
+  saveWatchlists(watchlists);
   elements.quickWatchlistName.value = "";
   
   if (activeSelectorWordId) {
@@ -1373,7 +1351,7 @@ function showWordDetails(wordId) {
   toggle.addEventListener("click", () => {
     entry.status = entry.status === "mastered" ? "practice" : "mastered";
     entry.updatedAt = Date.now();
-    persist();
+    saveEntries(entries);
     render();
     showWordDetails(wordId);
   });
@@ -1394,15 +1372,6 @@ function showWordDetails(wordId) {
   elements.drawerBody.append(card);
   elements.wordDetailDrawer.hidden = false;
 }
-function render() {
-  renderAlphabet();
-  renderWords();
-  renderStats();
-  renderWatchlists();
-  renderSynonyms();
-  if (currentView === "revise") renderRevision();
-}
-
 function render() {
   renderAlphabet();
   renderWords();
