@@ -4,10 +4,13 @@
   "private": true,
   "description": "Personal dictionary and AI vocabulary builder.",
   "scripts": {
-    "start": "node server.js",
-    "dev": "node server.js"
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
   },
   "engines": {
     "node": ">=18"
+  },
+  "devDependencies": {
+    "wrangler": "^4.112.0"
   }
 }
