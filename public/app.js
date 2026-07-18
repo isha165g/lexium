@@ -1,15 +1,71 @@
-const STORAGE_KEY = "lexium.dictionary.v1";
-const WATCHLISTS_STORAGE_KEY = "lexium.watchlists.v1";
-const DICTIONARY_API = "https://api.dictionaryapi.dev/api/v2/entries/en/";
+import {
+    generateWord,
+    health
+} from "./api/lexiumApi.js";
+
+import {
+    loadEntries,
+    saveEntries
+}
+from "./storage/dictionaryStorage.js";
+
+import {
+    loadWatchlists,
+    saveWatchlists
+}
+from "./storage/watchlistStorage.js";
+
+import {
+  createId,
+  statusLabel,
+  statusRank,
+  normalizeWord
+} 
+from "./shared/helper.js";
+
+import {
+    generateWordDetails
+}
+from "./services/dictionaryService.js";
+
+import {
+    saveGeneratedEntry,
+    deleteEntry,
+    refreshEntry,
+    markCurrent
+}
+from "./services/dictionaryManager.js";
+
+import {
+    createWatchlist,
+    renameWatchlist,
+    deleteWatchlist,
+    addWordToWatchlist,
+    removeWordFromWatchlist,
+    calculateSynonymGroups
+}
+from "./services/watchlistService.js";
+
+import {
+    buildRevisionDeck,
+    shuffleDeck,
+    startLetterRevision
+}
+from "./services/revisionService.js";
+
+import {
+    ERROR_MESSAGES
+} from "./shared/errors.js";
+
+import {
+    showNotification,
+    confirmAction
+} from "./shared/notification.js";
+
 const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
 
-function createId() {
-  if (crypto.randomUUID) return crypto.randomUUID();
-  return `lexium-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-}
-
 const sampleEntries = [
-  {
+  { 
     id: createId(),
     word: "serendipity",
     part: "Noun",
@@ -41,18 +97,27 @@ const sampleEntries = [
   }
 ];
 
-let entries = loadEntries();
-let watchlists = loadWatchlists();
+let entries = loadEntries(sampleEntries);
+let watchlists = loadWatchlists([
+    {
+        id: "watchlist-starred",
+        name: "Starred",
+        wordIds: [],
+        createdAt: Date.now()
+        }
+    ]);
+let revisionState = {
+    deck: [],
+    index: 0,
+    watchlistId: null,
+    letter: null,
+    revealed: false,
+    shuffled: false
+};
 let activeWatchlistId = watchlists.length ? watchlists[0].id : null;
-let revisionWatchlistId = null;
-let revisionLetter = null;
 let activeSelectorWordId = null;
 let currentView = "dictionary";
 let activeLetter = "All";
-let revisionDeck = [];
-let revisionIndex = 0;
-let meaningRevealed = false;
-let revisionShuffled = false;
 let generatedEntry = null;
 let localServerStatus = { ok: false, hasGeminiKey: false };
 
@@ -149,46 +214,6 @@ const elements = {
   aiNote: document.querySelector("#aiNote")
 };
 
-function loadEntries() {
-  try {
-    const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
-    return Array.isArray(stored) && stored.length ? stored : sampleEntries;
-  } catch {
-    return sampleEntries;
-  }
-}
-
-function loadWatchlists() {
-  try {
-    const stored = JSON.parse(localStorage.getItem(WATCHLISTS_STORAGE_KEY) || "[]");
-    if (Array.isArray(stored) && stored.length) {
-      return stored;
-    }
-  } catch (e) {
-    console.error("Failed to load watchlists", e);
-  }
-  return [
-    {
-      id: "watchlist-starred",
-      name: "Starred",
-      wordIds: [],
-      createdAt: Date.now()
-    }
-  ];
-}
-
-function persist() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
-}
-
-function persistWatchlists() {
-  localStorage.setItem(WATCHLISTS_STORAGE_KEY, JSON.stringify(watchlists));
-}
-
-function normalizeWord(word) {
-  return word.trim().replace(/\s+/g, " ");
-}
-
 function sortedEntries(list = entries) {
   const sortMode = elements.sortInput.value;
   const copy = [...list];
@@ -206,12 +231,6 @@ function sortedEntries(list = entries) {
   }
 
   return copy.sort((a, b) => a.word.localeCompare(b.word));
-}
-
-function statusRank(status) {
-  if (status === "practice") return 0;
-  if (status === "new") return 1;
-  return 2;
 }
 
 function filteredEntries() {
@@ -328,24 +347,72 @@ function renderWords() {
     toggle.addEventListener("click", () => {
       entry.status = entry.status === "mastered" ? "practice" : "mastered";
       entry.updatedAt = Date.now();
-      persist();
-      render();
+      try {
+        saveEntries(entries);
+        render();
+      } catch (error) {
+        console.error("Failed to save status change:", error);
+        showNotification(error.message, "error");
+      }
     });
 
     card.querySelector(".watchlist-toggle-button").addEventListener("click", (e) => {
       e.stopPropagation();
       openWatchlistSelector(entry.id);
     });
-    card.querySelector(".edit-button").addEventListener("click", () => refreshEntry(entry.id));
-    card.querySelector(".delete-button").addEventListener("click", () => deleteEntry(entry.id));
+    card.querySelector(".edit-button").addEventListener("click", async () => {
+
+        setLookupStatus(`Refreshing "${entry.word}"...`);
+
+        try {
+
+            const result = await refreshEntry({
+                entries,
+                id: entry.id
+            });
+
+            entries = result.entries;
+
+            revisionState.shuffled = false;
+
+            render();
+
+            setLookupStatus(result.message);
+
+        } catch (error) {
+            console.error("Failed to refresh entry:", error);
+            setLookupStatus(error.message);
+        }
+
+    });
+    card.querySelector(".delete-button").addEventListener("click", () => {
+
+        const confirmed = confirmAction(
+            `Delete "${entry.word}" from Lexium?`
+        );
+
+        if (!confirmed) return;
+
+        try {
+            const result = deleteEntry({
+                entries,
+                watchlists,
+                id: entry.id
+            });
+
+            entries = result.entries;
+            watchlists = result.watchlists;
+
+            revisionState.shuffled = false;
+
+            render();
+        } catch (error) {
+            console.error("Failed to delete entry:", error);
+            showNotification(error.message, "error");
+        }
+    });
     elements.wordList.append(card);
   });
-}
-
-function statusLabel(status) {
-  if (status === "mastered") return "Remembered";
-  if (status === "practice") return "Needs practice";
-  return "New";
 }
 
 function renderStats() {
@@ -376,11 +443,37 @@ function renderStats() {
       <button class="letter-revise-btn" type="button" data-letter="${letter}" title="Start flashcard session for letter ${letter}">▶ Revise</button>
     `;
     tile.querySelector(".letter-revise-btn").addEventListener("click", (e) => {
+
       e.stopPropagation();
-      startLetterRevision(letter);
+
+      const state = startLetterRevision(letter);
+
+      revisionState.letter = state.revisionLetter;
+      revisionState.watchlistId = state.revisionWatchlistId;
+      revisionState.index = state.revisionIndex;
+      revisionState.shuffled = state.revisionShuffled;
+      revisionState.revealed = state.meaningRevealed;
+
+      switchView("revise");
+
     });
+  
     tile.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" || e.key === " ") startLetterRevision(letter);
+      if (e.key === "Enter" || e.key === " ") {
+        
+        e.stopPropagation();
+
+        const state = startLetterRevision(letter);
+
+        revisionState.letter = state.revisionLetter;
+        revisionState.watchlistId = state.revisionWatchlistId;
+        revisionState.index = state.revisionIndex;
+        revisionState.shuffled = state.revisionShuffled;
+        revisionState.revealed = state.meaningRevealed;
+
+        switchView("revise");
+        
+      }
     });
     elements.letterBoard.append(tile);
   });
@@ -393,61 +486,42 @@ function renderStats() {
   }
 }
 
-function startLetterRevision(letter) {
-  revisionLetter = letter;
-  revisionWatchlistId = null;
-  revisionIndex = 0;
-  revisionShuffled = false;
-  meaningRevealed = false;
-  switchView("revise");
-}
-
-function buildRevisionDeck() {
-  const currentIds = revisionDeck.map((entry) => entry.id).sort().join("|");
-  let targetEntries = entries;
-  
-  if (revisionWatchlistId) {
-    const wl = watchlists.find(w => w.id === revisionWatchlistId);
-    if (wl) {
-      targetEntries = entries.filter(e => wl.wordIds.includes(e.id));
-    }
-  } else if (revisionLetter) {
-    targetEntries = entries.filter(e => e.word.charAt(0).toUpperCase() === revisionLetter);
-  }
-
-  const nextIds = targetEntries.map((entry) => entry.id).sort().join("|");
-  if (revisionShuffled && currentIds === nextIds) {
-    revisionIndex = Math.min(revisionIndex, Math.max(revisionDeck.length - 1, 0));
-    return;
-  }
-
-  revisionDeck = sortedEntries(targetEntries).sort((a, b) => statusRank(a.status) - statusRank(b.status));
-  revisionIndex = Math.min(revisionIndex, Math.max(revisionDeck.length - 1, 0));
-}
-
 function renderRevision() {
-  buildRevisionDeck();
+  const revisionResult = buildRevisionDeck({
+    entries,
+    watchlists,
+    revisionDeck: revisionState.deck,
+    revisionWatchlistId: revisionState.watchlistId,
+    revisionLetter: revisionState.letter,
+    revisionIndex: revisionState.index,
+    revisionShuffled: revisionState.shuffled,
+    sortedEntries,
+    statusRank
+  });
 
-  if (revisionWatchlistId) {
-    const wl = watchlists.find(w => w.id === revisionWatchlistId);
+  revisionState.deck = revisionResult.revisionDeck;
+  revisionState.index = revisionResult.revisionIndex;
+  
+  if (revisionState.watchlistId) {
+    const wl = watchlists.find(w => w.id === revisionState.watchlistId);
     if (wl) {
       elements.watchlistRevisionBanner.hidden = false;
       elements.revisionWatchlistName.textContent = wl.name;
     } else {
       elements.watchlistRevisionBanner.hidden = true;
-      revisionWatchlistId = null;
+      revisionState.watchlistId = null;
     }
     elements.letterRevisionBanner.hidden = true;
-  } else if (revisionLetter) {
+  } else if (revisionState.letter) {
     elements.letterRevisionBanner.hidden = false;
-    elements.revisionLetterName.textContent = revisionLetter;
+    elements.revisionLetterName.textContent = revisionState.letter;
     elements.watchlistRevisionBanner.hidden = true;
   } else {
     elements.watchlistRevisionBanner.hidden = true;
     elements.letterRevisionBanner.hidden = true;
   }
 
-  const entry = revisionDeck[revisionIndex];
+  const entry = revisionState.deck[revisionState.index];
   elements.cardExamples.innerHTML = "";
   elements.cardSynonyms.innerHTML = "";
   elements.cardAntonyms.innerHTML = "";
@@ -455,11 +529,11 @@ function renderRevision() {
   if (!entry) {
     elements.cardPosition.textContent = "0 / 0";
     elements.cardPart.textContent = "";
-    if (revisionWatchlistId) {
+    if (revisionState.watchlistId) {
       elements.cardWord.textContent = "No words to revise";
       elements.cardMeaning.textContent = "Add some words to this watchlist to revise them here.";
-    } else if (revisionLetter) {
-      elements.cardWord.textContent = `No words under “${revisionLetter}”`;
+    } else if (revisionState.letter) {
+      elements.cardWord.textContent = `No words under “${revisionState.letter}”`;
       elements.cardMeaning.textContent = "Add words starting with this letter to build a deck.";
     } else {
       elements.cardWord.textContent = "Add a word to begin";
@@ -472,7 +546,7 @@ function renderRevision() {
   }
 
   elements.revealButton.disabled = false;
-  elements.cardPosition.textContent = `${revisionIndex + 1} / ${revisionDeck.length}`;
+  elements.cardPosition.textContent = `${revisionState.index + 1} / ${revisionState.deck.length}`;
   elements.cardPart.textContent = entry.part || "Any";
   elements.cardWord.textContent = entry.word;
   elements.cardMeaning.textContent = entry.meaning;
@@ -512,8 +586,8 @@ function renderRevision() {
 
   elements.cardRelations.hidden = !hasCardRelations;
 
-  elements.flashcard.classList.toggle("is-hidden", !meaningRevealed);
-  elements.revealButton.textContent = meaningRevealed ? "Hide meaning" : "Reveal meaning";
+  elements.flashcard.classList.toggle("is-hidden", !revisionState.revealed);
+  elements.revealButton.textContent = revisionState.revealed ? "Hide meaning" : "Reveal meaning";
 }
 
 function switchView(view) {
@@ -543,218 +617,15 @@ async function lookupEntry(event) {
     showGeneratedPreview(generatedEntry);
     setLookupStatus("Details found. Save it when it looks right.");
   } catch (error) {
+    console.error("AI lookup entry failed:", error);
     generatedEntry = null;
     hideGeneratedPreview();
-    setLookupStatus(error.message || "Could not find that word.");
+    setLookupStatus(
+      error.message || ERROR_MESSAGES.GENERATION_FAILED
+    );
   } finally {
     setLookupBusy(false);
   }
-}
-
-async function generateWordDetails(word) {
-  try {
-    return await fetchAiWordDetails(word);
-  } catch (error) {
-    console.warn("Gemini lookup failed, falling back to dictionary API.", error);
-  }
-
-  return fetchWordDetails(word);
-}
-
-async function fetchAiWordDetails(word) {
-  const customKey = localStorage.getItem(GEMINI_API_KEY_STORAGE_KEY);
-  
-  if (customKey) {
-    const model = "gemini-3.1-flash-lite";
-    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(customKey)}`;
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [
-          {
-            role: "user",
-            parts: [{ text: buildVocabularyPrompt(word) }]
-          }
-        ],
-        generationConfig: {
-          temperature: 0.25,
-          maxOutputTokens: 700,
-          responseMimeType: "application/json"
-        }
-      })
-    });
-    
-    const geminiData = await response.json();
-    if (!response.ok) {
-      const message = geminiData?.error?.message || "Gemini request failed.";
-      throw new Error(message);
-    }
-    
-    const text = geminiData?.candidates?.[0]?.content?.parts?.map((part) => part.text || "").join("\n").trim();
-    const entry = parseGeneratedEntry(text, word);
-    
-    return {
-      ...entry,
-      status: "new",
-      updatedAt: Date.now()
-    };
-  }
-
-  // Fallback to local server API endpoint if custom key is not configured
-  const response = await fetch("/api/generate", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ word })
-  });
-
-  const data = await response.json();
-
-  if (!response.ok) {
-    throw new Error(data.error || "AI generation failed.");
-  }
-
-  if (!data?.word || !data?.meaning || !Array.isArray(data.examples)) {
-    throw new Error("AI returned an incomplete vocabulary entry.");
-  }
-
-  return {
-    word: normalizeWord(data.word || word),
-    part: titleCase(String(data.part || "Word")),
-    meaning: String(data.meaning).trim(),
-    examples: data.examples.map(String).map(tidySentence).filter(Boolean).slice(0, 4),
-    synonyms: Array.isArray(data.synonyms) ? data.synonyms.map(String).map(s => s.trim().toLowerCase()).filter(Boolean).slice(0, 4) : [],
-    antonyms: Array.isArray(data.antonyms) ? data.antonyms.map(String).map(a => a.trim().toLowerCase()).filter(Boolean).slice(0, 4) : [],
-    status: "new",
-    updatedAt: Date.now()
-  };
-}
-
-async function fetchWordDetails(word) {
-  const response = await fetch(`${DICTIONARY_API}${encodeURIComponent(word)}`);
-  if (!response.ok) {
-    throw new Error(`No dictionary entry found for "${word}".`);
-  }
-
-  const data = await response.json();
-  const firstEntry = Array.isArray(data) ? data[0] : null;
-  const meanings = firstEntry?.meanings || [];
-  const firstMeaning = meanings.find((meaning) => meaning.definitions?.length) || meanings[0];
-  const firstDefinition = firstMeaning?.definitions?.find((definition) => definition.definition);
-
-  if (!firstEntry || !firstMeaning || !firstDefinition) {
-    throw new Error(`No usable definition found for "${word}".`);
-  }
-
-  const definitions = firstMeaning.definitions
-    .map((definition) => definition.definition)
-    .filter(Boolean)
-    .slice(0, 3);
-  const synonyms = [
-    ...(firstMeaning.synonyms || []),
-    ...firstMeaning.definitions.flatMap((definition) => definition.synonyms || [])
-  ].filter(Boolean).slice(0, 4);
-  const antonyms = [
-    ...(firstMeaning.antonyms || []),
-    ...firstMeaning.definitions.flatMap((definition) => definition.antonyms || [])
-  ].filter(Boolean).slice(0, 4);
-  const examples = meanings
-    .flatMap((meaning) => meaning.definitions || [])
-    .map((definition) => definition.example)
-    .filter((example) => example && example.length <= 100)
-    .slice(0, 3);
-  const cleanWord = normalizeWord(firstEntry.word || word);
-  const part = titleCase(firstMeaning.partOfSpeech || "");
-
-  return {
-    word: cleanWord,
-    part,
-    meaning: createDetailedMeaning(cleanWord, part, definitions, synonyms),
-    examples: createSimpleExamples(cleanWord, part, examples),
-    synonyms: [...new Set(synonyms.map(s => s.toLowerCase()))],
-    antonyms: [...new Set(antonyms.map(a => a.toLowerCase()))],
-    status: "new",
-    updatedAt: Date.now()
-  };
-}
-
-function createDetailedMeaning(word, part, definitions, synonyms) {
-  const cleanDefinitions = [...new Set(definitions.map((definition) => tidySentence(definition)))];
-  const firstDefinition = cleanDefinitions[0] || `A word used in English.`;
-  const extraDefinitions = cleanDefinitions.slice(1);
-  const label = part ? `As a ${part.toLowerCase()}, ` : "";
-  let meaning = `${label}"${word}" means ${lowercaseFirst(firstDefinition)}`;
-
-  if (extraDefinitions.length) {
-    meaning += ` It can also mean ${extraDefinitions.map((definition) => lowercaseFirst(removeTerminalPunctuation(definition))).join("; ")}.`;
-  }
-
-  if (synonyms.length) {
-    meaning += ` Similar words: ${[...new Set(synonyms)].join(", ")}.`;
-  }
-
-  return meaning;
-}
-
-function createSimpleExamples(word, part, apiExamples) {
-  const cleanWord = normalizeWord(word).toLowerCase();
-  const simpleApiExamples = apiExamples
-    .map(tidySentence)
-    .filter((example) => example.split(/\s+/).length <= 14)
-    .slice(0, 2);
-  const fallbackExamples = fallbackExamplesForPart(cleanWord, part);
-  return [...new Set([...simpleApiExamples, ...fallbackExamples])].slice(0, 3);
-}
-
-function fallbackExamplesForPart(word, part) {
-  const normalizedPart = part.toLowerCase();
-  if (normalizedPart === "verb") {
-    return [
-      `I will ${word} it today.`,
-      `Please ${word} this carefully.`,
-      `They ${word} when they need to.`
-    ];
-  }
-
-  if (normalizedPart === "adjective") {
-    return [
-      `The story was ${word}.`,
-      `It felt very ${word}.`,
-      `She gave a ${word} answer.`
-    ];
-  }
-
-  if (normalizedPart === "adverb") {
-    return [
-      `She spoke ${word}.`,
-      `He walked ${word}.`,
-      `They worked ${word}.`
-    ];
-  }
-
-  return [
-    `This is an example of ${word}.`,
-    `I learned the word ${word} today.`,
-    `The teacher explained ${word} in class.`
-  ];
-}
-
-function tidySentence(value) {
-  const trimmed = value.trim().replace(/\s+/g, " ");
-  if (!trimmed) return trimmed;
-  return /[.!?]$/.test(trimmed) ? trimmed : `${trimmed}.`;
-}
-
-function lowercaseFirst(value) {
-  return value.charAt(0).toLowerCase() + value.slice(1);
-}
-
-function removeTerminalPunctuation(value) {
-  return value.replace(/[.!?]+$/, "");
-}
-
-function titleCase(value) {
-  return value ? value.charAt(0).toUpperCase() + value.slice(1).toLowerCase() : "";
 }
 
 function showGeneratedPreview(entry) {
@@ -836,62 +707,6 @@ function setLookupBusy(isBusy) {
   elements.saveWordButton.textContent = isBusy ? "Finding..." : "Add word";
 }
 
-function saveGeneratedEntry() {
-  if (!generatedEntry) return;
-  const word = generatedEntry.word;
-
-  const duplicate = entries.find((entry) => entry.word.toLowerCase() === word.toLowerCase() && entry.id !== elements.entryId.value);
-  if (duplicate) {
-    entries = entries.map((entry) => entry.id === duplicate.id ? { ...entry, ...generatedEntry, id: duplicate.id, createdAt: duplicate.createdAt } : entry);
-  } else {
-    entries.push({
-      id: createId(),
-      ...generatedEntry,
-      createdAt: Date.now()
-    });
-  }
-
-  revisionShuffled = false;
-  persist();
-  setLookupStatus(`Saved "${word}" to your dictionary.`);
-  clearForm(false);
-  render();
-}
-
-async function refreshEntry(id) {
-  const entry = entries.find((item) => item.id === id);
-  if (!entry) return;
-
-  const cardWord = entry.word;
-  setLookupStatus(`Refreshing "${cardWord}"...`);
-  try {
-    const refreshed = await generateWordDetails(cardWord);
-    entries = entries.map((item) => item.id === id ? { ...item, ...refreshed, id, createdAt: item.createdAt, status: item.status } : item);
-    revisionShuffled = false;
-    persist();
-    setLookupStatus(`Refreshed "${cardWord}".`);
-    render();
-  } catch (error) {
-    setLookupStatus(error.message || `Could not refresh "${cardWord}".`);
-  }
-}
-
-function deleteEntry(id) {
-  const entry = entries.find((item) => item.id === id);
-  if (!entry) return;
-  const confirmed = confirm(`Delete "${entry.word}" from Lexium?`);
-  if (!confirmed) return;
-  entries = entries.filter((item) => item.id !== id);
-  // Clean up references in watchlists
-  watchlists.forEach(wl => {
-    wl.wordIds = wl.wordIds.filter(wordId => wordId !== id);
-  });
-  persistWatchlists();
-  revisionShuffled = false;
-  persist();
-  render();
-}
-
 function clearForm(clearStatus = true) {
   elements.wordForm.reset();
   elements.entryId.value = "";
@@ -901,41 +716,36 @@ function clearForm(clearStatus = true) {
 }
 
 function moveCard(direction) {
-  if (!revisionDeck.length) return;
-  revisionIndex = (revisionIndex + direction + revisionDeck.length) % revisionDeck.length;
-  meaningRevealed = false;
-  renderRevision();
-}
+  if (!revisionState.deck.length) return;
 
-function markCurrent(status) {
-  const entry = revisionDeck[revisionIndex];
-  if (!entry) return;
-  entries = entries.map((item) => item.id === entry.id ? { ...item, status, updatedAt: Date.now() } : item);
-  persist();
-  moveCard(1);
-  render();
-}
+  revisionState.index =
+    (
+        revisionState.index +
+        direction +
+        revisionState.deck.length
+    ) % revisionState.deck.length;
 
-function shuffleDeck() {
-  revisionDeck = [...revisionDeck].sort(() => Math.random() - 0.5);
-  revisionShuffled = true;
-  revisionIndex = 0;
-  meaningRevealed = false;
+  revisionState.revealed = false;
   renderRevision();
 }
 
 function exportDictionary() {
-  const payload = {
-    entries,
-    watchlists
-  };
-  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = `lexium-dictionary-${new Date().toISOString().slice(0, 10)}.json`;
-  anchor.click();
-  URL.revokeObjectURL(url);
+  try {
+    const payload = {
+      entries,
+      watchlists
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `lexium-dictionary-${new Date().toISOString().slice(0, 10)}.json`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  } catch (error) {
+    console.error("Failed to export dictionary:", error);
+    showNotification(ERROR_MESSAGES.EXPORT_FAILED, "error");
+  }
 }
 
 function importDictionary(event) {
@@ -995,12 +805,13 @@ function importDictionary(event) {
         ];
       }
 
-      revisionShuffled = false;
-      persist();
-      persistWatchlists();
+      revisionState.shuffled = false;
+      saveEntries(entries);
+      saveWatchlists(watchlists);
       render();
-    } catch {
-      alert("That file does not look like a Lexium dictionary export.");
+    } catch (error) {
+      console.error("Failed to import dictionary:", error);
+      showNotification(error.message || ERROR_MESSAGES.IMPORT_FAILED, "error");
     } finally {
       event.target.value = "";
     }
@@ -1098,7 +909,17 @@ function renderWatchlists() {
       removeBtn.innerHTML = "&times;";
       removeBtn.addEventListener("click", (e) => {
         e.stopPropagation();
-        removeWordFromWatchlist(entry.id, activeWatchlist.id);
+        try {
+          watchlists = removeWordFromWatchlist({
+            watchlists,
+            wordId: entry.id,
+            watchlistId: activeWatchlist.id
+          });
+          renderWatchlists();
+        } catch (error) {
+          console.error("Failed to remove word from watchlist:", error);
+          showNotification(error.message, "error");
+        }
       });
       
       item.append(details, removeBtn);
@@ -1106,6 +927,7 @@ function renderWatchlists() {
     });
   }
 }
+
 function handleWatchlistWordSearch() {
   const query = elements.watchlistWordSearch.value.trim().toLowerCase();
   const activeWatchlist = watchlists.find(w => w.id === activeWatchlistId);
@@ -1144,7 +966,11 @@ function handleWatchlistWordSearch() {
       
       item.append(name, part);
       item.addEventListener("click", () => {
-        addWordToWatchlist(entry.id, activeWatchlist.id);
+        watchlists = addWordToWatchlist({
+          watchlists,
+          wordId: entry.id,
+          watchlistId: activeWatchlist.id
+        });
         elements.watchlistWordSearch.value = "";
         elements.watchlistWordDropdown.hidden = true;
       });
@@ -1153,67 +979,64 @@ function handleWatchlistWordSearch() {
   }
   elements.watchlistWordDropdown.hidden = false;
 }
+
 function handleCreateWatchlist() {
-  const name = prompt("Enter watchlist name:");
-  if (!name) return;
-  const cleanName = name.trim();
-  if (!cleanName) return;
-  
-  if (watchlists.some(w => w.name.toLowerCase() === cleanName.toLowerCase())) {
-    alert("A watchlist with this name already exists.");
-    return;
-  }
-  const newWl = {
-    id: `watchlist-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-    name: cleanName,
-    wordIds: [],
-    createdAt: Date.now()
-  };
-  watchlists.push(newWl);
-  persistWatchlists();
-  activeWatchlistId = newWl.id;
-  renderWatchlists();
+    const name = prompt("Enter watchlist name:");
+    if (!name) return;
+    try {
+        const result = createWatchlist({
+            watchlists,
+            name
+        });
+
+        if (!result.success) {
+            showNotification(
+                result.message,
+                "warning"
+            );
+            return;
+        }
+
+        watchlists = result.watchlists;
+        activeWatchlistId = result.watchlist.id;
+        renderWatchlists();
+    } catch (error) {
+        console.error("Failed to create watchlist:", error);
+        showNotification(error.message, "error");
+    }
 }
+
 function handleRenameWatchlist() {
-  const activeWatchlist = watchlists.find(w => w.id === activeWatchlistId);
-  if (!activeWatchlist) return;
-  const name = prompt("Rename watchlist:", activeWatchlist.name);
-  if (!name) return;
-  const cleanName = name.trim();
-  if (!cleanName || cleanName === activeWatchlist.name) return;
-  if (watchlists.some(w => w.name.toLowerCase() === cleanName.toLowerCase() && w.id !== activeWatchlistId)) {
-    alert("A watchlist with this name already exists.");
-    return;
-  }
-  activeWatchlist.name = cleanName;
-  persistWatchlists();
-  renderWatchlists();
+    const activeWatchlist = watchlists.find(
+        w => w.id === activeWatchlistId
+    );
+    if (!activeWatchlist) return;
+    const name = prompt(
+        "Rename watchlist:",
+        activeWatchlist.name
+    );
+    if (!name) return;
+    try {
+        const result = renameWatchlist({
+            watchlists,
+            watchlistId: activeWatchlistId,
+            newName: name
+        });
+        if (!result.success) {
+            showNotification(
+                result.message,
+                "warning"
+            );
+            return;
+        }
+        watchlists = result.watchlists;
+        renderWatchlists();
+    } catch (error) {
+        console.error("Failed to rename watchlist:", error);
+        showNotification(error.message, "error");
+    }
 }
-function handleDeleteWatchlist() {
-  const activeWatchlist = watchlists.find(w => w.id === activeWatchlistId);
-  if (!activeWatchlist) return;
-  if (!confirm(`Are you sure you want to delete the watchlist "${activeWatchlist.name}"?`)) return;
-  watchlists = watchlists.filter(w => w.id !== activeWatchlistId);
-  persistWatchlists();
-  activeWatchlistId = watchlists.length ? watchlists[0].id : null;
-  renderWatchlists();
-}
-function addWordToWatchlist(wordId, watchlistId) {
-  const wl = watchlists.find(w => w.id === watchlistId);
-  if (wl && !wl.wordIds.includes(wordId)) {
-    wl.wordIds.push(wordId);
-    persistWatchlists();
-    renderWatchlists();
-  }
-}
-function removeWordFromWatchlist(wordId, watchlistId) {
-  const wl = watchlists.find(w => w.id === watchlistId);
-  if (wl) {
-    wl.wordIds = wl.wordIds.filter(id => id !== wordId);
-    persistWatchlists();
-    renderWatchlists();
-  }
-}
+
 function openWatchlistSelector(wordId) {
   const entry = entries.find(e => e.id === wordId);
   if (!entry) return;
@@ -1229,15 +1052,27 @@ function openWatchlistSelector(wordId) {
     checkbox.type = "checkbox";
     checkbox.checked = wl.wordIds.includes(wordId);
     checkbox.addEventListener("change", () => {
-      if (checkbox.checked) {
-        if (!wl.wordIds.includes(wordId)) wl.wordIds.push(wordId);
-      } else {
-        wl.wordIds = wl.wordIds.filter(id => id !== wordId);
-      }
-      persistWatchlists();
-      renderWatchlists();
+        try {
+            if (checkbox.checked) {
+                watchlists = addWordToWatchlist({
+                    watchlists,
+                    wordId,
+                    watchlistId: wl.id
+                });
+            } else {
+                watchlists = removeWordFromWatchlist({
+                    watchlists,
+                    wordId,
+                    watchlistId: wl.id
+                });
+            }
+            openWatchlistSelector(wordId);
+        } catch (error) {
+            console.error("Failed to update watchlist word selection:", error);
+            showNotification(error.message, "error");
+        }
     });
-    
+
     const span = document.createElement("span");
     span.textContent = wl.name;
     
@@ -1247,68 +1082,77 @@ function openWatchlistSelector(wordId) {
   elements.quickWatchlistName.value = "";
   elements.watchlistSelectorModal.hidden = false;
 }
+
 function handleQuickWatchlistCreate() {
-  const name = elements.quickWatchlistName.value.trim();
-  if (!name) return;
-  
-  if (watchlists.some(w => w.name.toLowerCase() === name.toLowerCase())) {
-    alert("A watchlist with this name already exists.");
-    return;
-  }
-  const newWl = {
-    id: `watchlist-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-    name: name,
-    wordIds: activeSelectorWordId ? [activeSelectorWordId] : [],
-    createdAt: Date.now()
-  };
-  watchlists.push(newWl);
-  persistWatchlists();
-  elements.quickWatchlistName.value = "";
-  
-  if (activeSelectorWordId) {
-    openWatchlistSelector(activeSelectorWordId);
-  }
-  renderWatchlists();
-}
-function calculateSynonymGroups() {
-  const groups = {};
-  
-  entries.forEach(entry => {
-    const wordLower = entry.word.toLowerCase();
-    
-    if (!groups[wordLower]) groups[wordLower] = new Set();
-    groups[wordLower].add(entry);
-    if (entry.synonyms && Array.isArray(entry.synonyms)) {
-      entry.synonyms.forEach(syn => {
-        const synLower = syn.trim().toLowerCase();
-        if (synLower) {
-          if (!groups[synLower]) groups[synLower] = new Set();
-          groups[synLower].add(entry);
-        }
-      });
-    }
-  });
-  const groupList = [];
-  const searchQuery = elements.synonymsSearchInput.value.trim().toLowerCase();
-  for (const synonym in groups) {
-    const words = Array.from(groups[synonym]);
-    if (words.length >= 2) {
-      const matchesSearch = !searchQuery || 
-                            synonym.includes(searchQuery) || 
-                            words.some(e => e.word.toLowerCase().includes(searchQuery));
-      
-      if (matchesSearch) {
-        groupList.push({
-          synonym,
-          words: words.sort((a, b) => a.word.localeCompare(b.word))
+    const name = elements.quickWatchlistName.value.trim();
+    if (!name) return;
+    try {
+        const result = createWatchlist({
+            watchlists,
+            name,
+            wordIds: activeSelectorWordId
+                ? [activeSelectorWordId]
+                : []
         });
-      }
+        
+        if (!result.success) {
+            showNotification(
+                result.message,
+                "warning"
+            );
+            return;
+        }
+        watchlists = result.watchlists;
+        activeWatchlistId = result.watchlist.id;
+        elements.quickWatchlistName.value = "";
+        openWatchlistSelector(activeSelectorWordId);
+        renderWatchlists();
+    } catch (error) {
+        console.error("Failed to quickly create watchlist:", error);
+        showNotification(error.message, "error");
     }
-  }
-  return groupList.sort((a, b) => b.words.length - a.words.length || a.synonym.localeCompare(b.synonym));
 }
+
+function handleDeleteWatchlist() {
+
+    const activeWatchlist = watchlists.find(
+        w => w.id === activeWatchlistId
+    );
+
+    if (!activeWatchlist) return;
+
+    if (
+        !confirmAction(
+            `Are you sure you want to delete the watchlist "${activeWatchlist.name}"?`
+        )
+    ) {
+        return;
+    }
+
+    try {
+        watchlists = deleteWatchlist({
+            watchlists,
+            watchlistId: activeWatchlistId
+        });
+
+        activeWatchlistId =
+            watchlists.length
+                ? watchlists[0].id
+                : null;
+
+        renderWatchlists();
+    } catch (error) {
+        console.error("Failed to delete watchlist:", error);
+        showNotification(error.message, "error");
+    }
+}
+
+
 function renderSynonyms() {
-  const groups = calculateSynonymGroups();
+  const groups = calculateSynonymGroups({
+    entries,
+    searchQuery: elements.synonymsSearchInput.value
+  });
   elements.synonymGroupsGrid.innerHTML = "";
   if (!groups.length) {
     elements.synonymGroupsGrid.innerHTML = `<div class="empty-state">No synonym groups found. Add more words with overlapping synonyms (e.g. synonyms that are also dictionary entries or shared across entries).</div>`;
@@ -1423,18 +1267,64 @@ function showWordDetails(wordId) {
   toggle.addEventListener("click", () => {
     entry.status = entry.status === "mastered" ? "practice" : "mastered";
     entry.updatedAt = Date.now();
-    persist();
-    render();
-    showWordDetails(wordId);
+    try {
+      saveEntries(entries);
+      render();
+      showWordDetails(wordId);
+    } catch (error) {
+      console.error("Failed to save status change:", error);
+      showNotification(error.message, "error");
+    }
   });
   card.querySelector(".edit-button").addEventListener("click", async () => {
     elements.wordDetailDrawer.hidden = true;
-    await refreshEntry(entry.id);
+    setLookupStatus(`Refreshing "${entry.word}"...`);
+    try {
+
+        const result = await refreshEntry({
+            entries,
+            id: entry.id
+        });
+
+        entries = result.entries;
+
+        revisionState.shuffled = false;
+
+        render();
+
+        setLookupStatus(result.message);
+
+    } catch (error) {
+        console.error("Failed to refresh entry:", error);
+        setLookupStatus(error.message);
+    }
   });
   
   card.querySelector(".delete-button").addEventListener("click", () => {
     elements.wordDetailDrawer.hidden = true;
-    deleteEntry(entry.id);
+    const confirmed = confirmAction(
+      `Delete "${entry.word}" from Lexium?`
+    );
+
+    if (!confirmed) return;
+
+    try {
+        const result = deleteEntry({
+            entries,
+            watchlists,
+            id: entry.id
+        });
+
+        entries = result.entries;
+        watchlists = result.watchlists;
+
+        revisionState.shuffled = false;
+
+        render();
+    } catch (error) {
+        console.error("Failed to delete entry:", error);
+        showNotification(error.message, "error");
+    }
   });
   
   card.querySelector(".watchlist-toggle-button").addEventListener("click", (e) => {
@@ -1453,232 +1343,216 @@ function render() {
   if (currentView === "revise") renderRevision();
 }
 
-function render() {
-  renderAlphabet();
-  renderWords();
-  renderStats();
-  renderWatchlists();
-  renderSynonyms();
-  if (currentView === "revise") renderRevision();
+function bindEvents() {
+
+  // -------------------------
+  // Navigation
+  // -------------------------
+
+  elements.tabs.forEach((tab) => tab.addEventListener("click", () => switchView(tab.dataset.view)));
+
+  // -------------------------
+  // Dictionary & Search
+  // -------------------------
+
+  elements.wordForm.addEventListener("submit", lookupEntry);
+
+  elements.confirmGeneratedButton.addEventListener("click", () => {
+    try {
+      const result = saveGeneratedEntry({
+          entries,  
+          generatedEntry,
+          entryId: elements.entryId.value
+      });
+
+      if (!result.saved) return;
+
+      entries = result.entries;
+
+      revisionState.shuffled = false;
+
+      clearForm(false);
+
+      render();
+
+      setLookupStatus(result.message);
+    } catch (error) {
+      console.error("Failed to save generated entry:", error);
+      showNotification(error.message, "error");
+    }
+  });
+  elements.clearGeneratedButton.addEventListener("click", clearForm);
+  elements.clearFormButton.addEventListener("click", clearForm);
+  elements.newWordButton.addEventListener("click", () => {
+    clearForm();
+    elements.wordInput.focus();
+  });
+  elements.searchInput.addEventListener("input", renderWords);
+  elements.sortInput.addEventListener("change", renderWords);
+
+  // -------------------------
+  // Revision
+  // -------------------------
+
+  elements.prevCardButton.addEventListener("click", () => moveCard(-1));
+  elements.nextCardButton.addEventListener("click", () => moveCard(1));
+  elements.revealButton.addEventListener("click", () => {
+    revisionState.revealed = !revisionState.revealed;
+    renderRevision();
+  });
+  elements.shuffleButton.addEventListener("click", () => {
+    const result = shuffleDeck(revisionState.deck);
+
+    revisionState.deck = result.deck;
+    revisionState.index = result.index;
+    revisionState.shuffled = result.shuffled;
+    revisionState.revealed = result.revealed;
+
+    renderRevision();
+  });
+  elements.hardButton.addEventListener("click", () => {
+
+    const entry = revisionState.deck[revisionState.index];
+    if (!entry) return;
+
+    const result = markCurrent({
+        entries,
+        entryId: entry.id,
+        status: "practice"
+    });
+
+    entries = result.entries;
+
+    moveCard(1);
+
+    render();
+  });
+  elements.goodButton.addEventListener("click", () => {
+
+    const entry = revisionState.deck[revisionState.index];
+    if (!entry) return;
+
+    const result = markCurrent({
+        entries,
+        entryId: entry.id,
+        status: "mastered"
+    });
+
+    entries = result.entries;
+
+    moveCard(1);
+
+    render();
+  });
+  
+    // -------------------------
+    // Import / Export
+    // -------------------------
+
+  elements.exportButton.addEventListener("click", exportDictionary);  
+  elements.importInput.addEventListener("change", importDictionary);
+
+    // -------------------------
+    // Watchlists
+    // -------------------------
+
+  elements.newWatchlistButton.addEventListener("click", handleCreateWatchlist);
+  elements.renameWatchlistButton.addEventListener("click", handleRenameWatchlist);
+  elements.deleteWatchlistButton.addEventListener("click", handleDeleteWatchlist);
+  elements.watchlistWordSearch.addEventListener("input", handleWatchlistWordSearch);
+  elements.quickWatchlistCreateBtn.addEventListener("click", handleQuickWatchlistCreate);
+
+    // -------------------------
+    // Modals
+    // -------------------------
+
+  elements.closeWatchlistModalBtn.addEventListener("click", () => {
+    elements.watchlistSelectorModal.hidden = true;
+  });
+  elements.closeDrawerBtn.addEventListener("click", () => {
+    elements.wordDetailDrawer.hidden = true;
+  });
+  elements.synonymsSearchInput.addEventListener("input", renderSynonyms);
+  elements.reviseWatchlistButton.addEventListener("click", () => {
+    if (!activeWatchlistId) return;
+    const wl = watchlists.find(w => w.id === activeWatchlistId);
+    if (!wl) return;
+    if (!wl.wordIds.length) {
+      showNotification(ERROR_MESSAGES.REVISION_EMPTY, "warning");
+      return;
+    }
+    revisionState.watchlistId = activeWatchlistId;
+    revisionState.letter = null;
+    revisionState.index = 0;
+    revisionState.shuffled = false;
+    revisionState.revealed = false;
+    switchView("revise");
+  });
+  elements.exitWatchlistRevisionBtn.addEventListener("click", () => {
+    revisionState.watchlistId = null;
+    revisionState.index = 0;
+    revisionState.shuffled = false;
+    revisionState.revealed = false;
+    renderRevision();
+  });
+  elements.exitLetterRevisionBtn.addEventListener("click", () => {
+    revisionState.letter = null;
+    revisionState.index = 0;
+    revisionState.shuffled = false;
+    revisionState.revealed = false;
+    renderRevision();
+  });
+  elements.watchlistSelectorModal.addEventListener("click", (e) => {
+    if (e.target === elements.watchlistSelectorModal) {
+      elements.watchlistSelectorModal.hidden = true;
+    }
+  });
+  elements.wordDetailDrawer.addEventListener("click", (e) => {
+    if (e.target === elements.wordDetailDrawer) {
+      elements.wordDetailDrawer.hidden = true;
+    }
+  });
+
+    // -------------------------
+    // Global
+    // -------------------------
+
+  document.addEventListener("click", (e) => {
+    if (!elements.watchlistWordSearch.contains(e.target) && !elements.watchlistWordDropdown.contains(e.target)) {
+      elements.watchlistWordDropdown.hidden = true;
+    }
+  });
 }
 
-elements.tabs.forEach((tab) => tab.addEventListener("click", () => switchView(tab.dataset.view)));
-elements.wordForm.addEventListener("submit", lookupEntry);
-elements.confirmGeneratedButton.addEventListener("click", saveGeneratedEntry);
-elements.clearGeneratedButton.addEventListener("click", clearForm);
-elements.clearFormButton.addEventListener("click", clearForm);
-elements.newWordButton.addEventListener("click", () => {
-  clearForm();
-  elements.wordInput.focus();
-});
-elements.searchInput.addEventListener("input", renderWords);
-elements.sortInput.addEventListener("change", renderWords);
-elements.prevCardButton.addEventListener("click", () => moveCard(-1));
-elements.nextCardButton.addEventListener("click", () => moveCard(1));
-elements.revealButton.addEventListener("click", () => {
-  meaningRevealed = !meaningRevealed;
-  renderRevision();
-});
-elements.shuffleButton.addEventListener("click", shuffleDeck);
-elements.hardButton.addEventListener("click", () => markCurrent("practice"));
-elements.goodButton.addEventListener("click", () => markCurrent("mastered"));
-elements.exportButton.addEventListener("click", exportDictionary);
-elements.importInput.addEventListener("change", importDictionary);
-
-elements.newWatchlistButton.addEventListener("click", handleCreateWatchlist);
-elements.renameWatchlistButton.addEventListener("click", handleRenameWatchlist);
-elements.deleteWatchlistButton.addEventListener("click", handleDeleteWatchlist);
-elements.watchlistWordSearch.addEventListener("input", handleWatchlistWordSearch);
-elements.quickWatchlistCreateBtn.addEventListener("click", handleQuickWatchlistCreate);
-elements.closeWatchlistModalBtn.addEventListener("click", () => {
-  elements.watchlistSelectorModal.hidden = true;
-});
-elements.closeDrawerBtn.addEventListener("click", () => {
-  elements.wordDetailDrawer.hidden = true;
-});
-elements.synonymsSearchInput.addEventListener("input", renderSynonyms);
-elements.reviseWatchlistButton.addEventListener("click", () => {
-  if (!activeWatchlistId) return;
-  const wl = watchlists.find(w => w.id === activeWatchlistId);
-  if (!wl) return;
-  if (!wl.wordIds.length) {
-    alert("Add some words to this watchlist first before revising!");
-    return;
-  }
-  revisionWatchlistId = activeWatchlistId;
-  revisionLetter = null;
-  revisionIndex = 0;
-  revisionShuffled = false;
-  meaningRevealed = false;
-  switchView("revise");
-});
-elements.exitWatchlistRevisionBtn.addEventListener("click", () => {
-  revisionWatchlistId = null;
-  revisionIndex = 0;
-  revisionShuffled = false;
-  meaningRevealed = false;
-  renderRevision();
-});
-elements.exitLetterRevisionBtn.addEventListener("click", () => {
-  revisionLetter = null;
-  revisionIndex = 0;
-  revisionShuffled = false;
-  meaningRevealed = false;
-  renderRevision();
-});
-elements.watchlistSelectorModal.addEventListener("click", (e) => {
-  if (e.target === elements.watchlistSelectorModal) {
-    elements.watchlistSelectorModal.hidden = true;
-  }
-});
-elements.wordDetailDrawer.addEventListener("click", (e) => {
-  if (e.target === elements.wordDetailDrawer) {
-    elements.wordDetailDrawer.hidden = true;
-  }
-});
-document.addEventListener("click", (e) => {
-  if (!elements.watchlistWordSearch.contains(e.target) && !elements.watchlistWordDropdown.contains(e.target)) {
-    elements.watchlistWordDropdown.hidden = true;
-  }
-});
-
-// Settings and API Key Management
-const GEMINI_API_KEY_STORAGE_KEY = "lexium.gemini.apikey";
-
-async function checkLocalServer() {
+async function checkBackend() {
   try {
-    const res = await fetch("/api/health");
-    if (res.ok) {
-      localServerStatus = await res.json();
-    } else {
-      localServerStatus = { ok: false, hasGeminiKey: false };
-    }
-  } catch (e) {
-    localServerStatus = { ok: false, hasGeminiKey: false };
+    localServerStatus = await health();
+  } catch (error) {
+    console.warn("Backend health check failed:", error);
+    localServerStatus = {
+      ok: false,
+      hasGeminiKey: false
+    };
   }
 }
 
 function updateApiStatusDisplay() {
-  const customKey = localStorage.getItem(GEMINI_API_KEY_STORAGE_KEY);
-  if (customKey) {
-    elements.aiNote.textContent = "Gemini AI is active using your custom API key (direct client-side requests).";
+  if (localServerStatus.ok && localServerStatus.hasGeminiKey) {
+    elements.aiNote.textContent =
+      `AI connected (${localServerStatus.model})`;
     elements.aiNote.style.color = "var(--green)";
-    elements.settingsApiKeyInput.value = customKey;
-  } else if (localServerStatus.ok && localServerStatus.hasGeminiKey) {
-    elements.aiNote.textContent = `Gemini AI is active using the local backend (Model: ${localServerStatus.model || 'Gemini'}).`;
-    elements.aiNote.style.color = "var(--teal-dark)";
-    elements.settingsApiKeyInput.value = "";
   } else {
-    elements.aiNote.textContent = "Gemini AI is not configured. Lexium will fall back to the free dictionary API. Click 'Settings' below to add your Gemini key.";
+    elements.aiNote.textContent =
+      "AI unavailable. Using the free dictionary.";
     elements.aiNote.style.color = "var(--muted)";
-    elements.settingsApiKeyInput.value = "";
   }
 }
 
-function openSettingsModal() {
-  const customKey = localStorage.getItem(GEMINI_API_KEY_STORAGE_KEY) || "";
-  elements.settingsApiKeyInput.value = customKey;
-  elements.settingsModal.hidden = false;
+async function initializeApp() {
+    bindEvents();
+    render();
+    await checkBackend();
+    updateApiStatusDisplay();
 }
 
-function closeSettingsModal() {
-  elements.settingsModal.hidden = true;
-}
-
-function saveApiKey(event) {
-  event.preventDefault();
-  const key = elements.settingsApiKeyInput.value.trim();
-  if (key) {
-    localStorage.setItem(GEMINI_API_KEY_STORAGE_KEY, key);
-  } else {
-    localStorage.removeItem(GEMINI_API_KEY_STORAGE_KEY);
-  }
-  closeSettingsModal();
-  updateApiStatusDisplay();
-}
-
-function clearApiKey() {
-  localStorage.removeItem(GEMINI_API_KEY_STORAGE_KEY);
-  elements.settingsApiKeyInput.value = "";
-  closeSettingsModal();
-  updateApiStatusDisplay();
-}
-
-// Client-Side Gemini Prompt and Parsing logic (mirrors server.js)
-function buildVocabularyPrompt(word) {
-  return `Create a vocabulary-builder entry for the English word "${word}".
-
-Return only valid JSON with this exact shape:
-{
-  "word": "correct lowercase word",
-  "part": "Noun | Verb | Adjective | Adverb | Phrase | Word",
-  "meaning": "Detailed learner-friendly meaning.",
-  "examples": [
-    "Simple example sentence 1.",
-    "Simple example sentence 2.",
-    "Simple example sentence 3.",
-    "Simple example sentence 4."
-  ],
-  "synonyms": [
-    "synonym 1",
-    "synonym 2",
-    "synonym 3"
-  ],
-  "antonyms": [
-    "antonym 1",
-    "antonym 2",
-    "antonym 3"
-  ]
-}
-
-Meaning rules:
-- Write 3 to 5 short sentences.
-- Explain the common meaning first.
-- Add useful nuance, common context, or emotion if relevant.
-- Use plain English for a school student or English learner.
-- Avoid circular definitions.
-
-Example rules:
-- Sentences must be short, natural, and easy.
-- Each sentence must contain the word or a close grammatical form.
-- Use everyday situations.
-- Do not use difficult words in the examples.
-
-Synonyms and Antonyms rules:
-- Provide 2 to 4 high-quality synonyms and antonyms related to the context of the definition.
-- Keep them single words or short common phrases in lowercase.
-- If there are no clear antonyms or synonyms (e.g. for some highly abstract words or function words), return an empty array [].`;
-}
-
-function parseGeneratedEntry(text, fallbackWord) {
-  if (!text) throw new Error("Gemini returned an empty response.");
-
-  const cleaned = text.replace(/^```(?:json)?/i, "").replace(/```$/i, "").trim();
-  const data = JSON.parse(cleaned);
-
-  if (!data.word || !data.meaning || !Array.isArray(data.examples)) {
-    throw new Error("Gemini returned an incomplete vocabulary entry.");
-  }
-
-  return {
-    word: normalizeWord(data.word || fallbackWord),
-    part: titleCase(String(data.part || "Word")),
-    meaning: String(data.meaning).trim(),
-    examples: data.examples.map((example) => tidySentence(String(example))).filter(Boolean).slice(0, 4),
-    synonyms: Array.isArray(data.synonyms) ? data.synonyms.map((syn) => String(syn).trim().toLowerCase()).filter(Boolean).slice(0, 4) : [],
-    antonyms: Array.isArray(data.antonyms) ? data.antonyms.map((ant) => String(ant).trim().toLowerCase()).filter(Boolean).slice(0, 4) : []
-  };
-}
-
-elements.settingsButton.addEventListener("click", openSettingsModal);
-elements.closeSettingsModalBtn.addEventListener("click", closeSettingsModal);
-elements.settingsForm.addEventListener("submit", saveApiKey);
-elements.clearApiKeyBtn.addEventListener("click", clearApiKey);
-elements.settingsModal.addEventListener("click", (e) => {
-  if (e.target === elements.settingsModal) {
-    closeSettingsModal();
-  }
-});
-
-render();
-checkLocalServer().then(() => updateApiStatusDisplay());
+initializeApp();
