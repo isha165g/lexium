@@ -46,6 +46,13 @@ import {
 }
 from "./services/watchlistService.js";
 
+import {
+    buildRevisionDeck,
+    shuffleDeck,
+    startLetterRevision
+}
+from "./services/revisionService.js";
+
 const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
 
 const sampleEntries = [
@@ -82,25 +89,26 @@ const sampleEntries = [
 ];
 
 let entries = loadEntries(sampleEntries);
-let watchlists =
-    loadWatchlists([
-        {
-            id: "watchlist-starred",
-            name: "Starred",
-            wordIds: [],
-            createdAt: Date.now()
+let watchlists = loadWatchlists([
+    {
+        id: "watchlist-starred",
+        name: "Starred",
+        wordIds: [],
+        createdAt: Date.now()
         }
     ]);
+let revisionState = {
+    deck: [],
+    index: 0,
+    watchlistId: null,
+    letter: null,
+    revealed: false,
+    shuffled: false
+};
 let activeWatchlistId = watchlists.length ? watchlists[0].id : null;
-let revisionWatchlistId = null;
-let revisionLetter = null;
 let activeSelectorWordId = null;
 let currentView = "dictionary";
 let activeLetter = "All";
-let revisionDeck = [];
-let revisionIndex = 0;
-let meaningRevealed = false;
-let revisionShuffled = false;
 let generatedEntry = null;
 let localServerStatus = { ok: false, hasGeminiKey: false };
 
@@ -351,7 +359,7 @@ function renderWords() {
 
             entries = result.entries;
 
-            revisionShuffled = false;
+            revisionState.shuffled = false;
 
             render();
 
@@ -379,7 +387,7 @@ function renderWords() {
         entries = result.entries;
         watchlists = result.watchlists;
 
-        revisionShuffled = false;
+        revisionState.shuffled = false;
 
         render();
     });
@@ -415,11 +423,37 @@ function renderStats() {
       <button class="letter-revise-btn" type="button" data-letter="${letter}" title="Start flashcard session for letter ${letter}">▶ Revise</button>
     `;
     tile.querySelector(".letter-revise-btn").addEventListener("click", (e) => {
+
       e.stopPropagation();
-      startLetterRevision(letter);
+
+      const state = startLetterRevision(letter);
+
+      revisionState.letter = state.revisionLetter;
+      revisionState.watchlistId = state.revisionWatchlistId;
+      revisionState.index = state.revisionIndex;
+      revisionState.shuffled = state.revisionShuffled;
+      revisionState.revealed = state.meaningRevealed;
+
+      switchView("revise");
+
     });
+  
     tile.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" || e.key === " ") startLetterRevision(letter);
+      if (e.key === "Enter" || e.key === " ") {
+        
+        e.stopPropagation();
+
+        const state = startLetterRevision(letter);
+
+        revisionState.letter = state.revisionLetter;
+        revisionState.watchlistId = state.revisionWatchlistId;
+        revisionState.index = state.revisionIndex;
+        revisionState.shuffled = state.revisionShuffled;
+        revisionState.revealed = state.meaningRevealed;
+
+        switchView("revise");
+        
+      }
     });
     elements.letterBoard.append(tile);
   });
@@ -432,61 +466,42 @@ function renderStats() {
   }
 }
 
-function startLetterRevision(letter) {
-  revisionLetter = letter;
-  revisionWatchlistId = null;
-  revisionIndex = 0;
-  revisionShuffled = false;
-  meaningRevealed = false;
-  switchView("revise");
-}
-
-function buildRevisionDeck() {
-  const currentIds = revisionDeck.map((entry) => entry.id).sort().join("|");
-  let targetEntries = entries;
-  
-  if (revisionWatchlistId) {
-    const wl = watchlists.find(w => w.id === revisionWatchlistId);
-    if (wl) {
-      targetEntries = entries.filter(e => wl.wordIds.includes(e.id));
-    }
-  } else if (revisionLetter) {
-    targetEntries = entries.filter(e => e.word.charAt(0).toUpperCase() === revisionLetter);
-  }
-
-  const nextIds = targetEntries.map((entry) => entry.id).sort().join("|");
-  if (revisionShuffled && currentIds === nextIds) {
-    revisionIndex = Math.min(revisionIndex, Math.max(revisionDeck.length - 1, 0));
-    return;
-  }
-
-  revisionDeck = sortedEntries(targetEntries).sort((a, b) => statusRank(a.status) - statusRank(b.status));
-  revisionIndex = Math.min(revisionIndex, Math.max(revisionDeck.length - 1, 0));
-}
-
 function renderRevision() {
-  buildRevisionDeck();
+  const revisionResult = buildRevisionDeck({
+    entries,
+    watchlists,
+    revisionDeck: revisionState.deck,
+    revisionWatchlistId: revisionState.watchlistId,
+    revisionLetter: revisionState.letter,
+    revisionIndex: revisionState.index,
+    revisionShuffled: revisionState.shuffled,
+    sortedEntries,
+    statusRank
+  });
 
-  if (revisionWatchlistId) {
-    const wl = watchlists.find(w => w.id === revisionWatchlistId);
+  revisionState.deck = revisionResult.revisionDeck;
+  revisionState.index = revisionResult.revisionIndex;
+  
+  if (revisionState.watchlistId) {
+    const wl = watchlists.find(w => w.id === revisionState.watchlistId);
     if (wl) {
       elements.watchlistRevisionBanner.hidden = false;
       elements.revisionWatchlistName.textContent = wl.name;
     } else {
       elements.watchlistRevisionBanner.hidden = true;
-      revisionWatchlistId = null;
+      revisionState.watchlistId = null;
     }
     elements.letterRevisionBanner.hidden = true;
-  } else if (revisionLetter) {
+  } else if (revisionState.letter) {
     elements.letterRevisionBanner.hidden = false;
-    elements.revisionLetterName.textContent = revisionLetter;
+    elements.revisionLetterName.textContent = revisionState.letter;
     elements.watchlistRevisionBanner.hidden = true;
   } else {
     elements.watchlistRevisionBanner.hidden = true;
     elements.letterRevisionBanner.hidden = true;
   }
 
-  const entry = revisionDeck[revisionIndex];
+  const entry = revisionState.deck[revisionState.index];
   elements.cardExamples.innerHTML = "";
   elements.cardSynonyms.innerHTML = "";
   elements.cardAntonyms.innerHTML = "";
@@ -494,11 +509,11 @@ function renderRevision() {
   if (!entry) {
     elements.cardPosition.textContent = "0 / 0";
     elements.cardPart.textContent = "";
-    if (revisionWatchlistId) {
+    if (revisionState.watchlistId) {
       elements.cardWord.textContent = "No words to revise";
       elements.cardMeaning.textContent = "Add some words to this watchlist to revise them here.";
-    } else if (revisionLetter) {
-      elements.cardWord.textContent = `No words under “${revisionLetter}”`;
+    } else if (revisionState.letter) {
+      elements.cardWord.textContent = `No words under “${revisionState.letter}”`;
       elements.cardMeaning.textContent = "Add words starting with this letter to build a deck.";
     } else {
       elements.cardWord.textContent = "Add a word to begin";
@@ -511,7 +526,7 @@ function renderRevision() {
   }
 
   elements.revealButton.disabled = false;
-  elements.cardPosition.textContent = `${revisionIndex + 1} / ${revisionDeck.length}`;
+  elements.cardPosition.textContent = `${revisionState.index + 1} / ${revisionState.deck.length}`;
   elements.cardPart.textContent = entry.part || "Any";
   elements.cardWord.textContent = entry.word;
   elements.cardMeaning.textContent = entry.meaning;
@@ -551,8 +566,8 @@ function renderRevision() {
 
   elements.cardRelations.hidden = !hasCardRelations;
 
-  elements.flashcard.classList.toggle("is-hidden", !meaningRevealed);
-  elements.revealButton.textContent = meaningRevealed ? "Hide meaning" : "Reveal meaning";
+  elements.flashcard.classList.toggle("is-hidden", !revisionState.revealed);
+  elements.revealButton.textContent = revisionState.revealed ? "Hide meaning" : "Reveal meaning";
 }
 
 function switchView(view) {
@@ -678,17 +693,16 @@ function clearForm(clearStatus = true) {
 }
 
 function moveCard(direction) {
-  if (!revisionDeck.length) return;
-  revisionIndex = (revisionIndex + direction + revisionDeck.length) % revisionDeck.length;
-  meaningRevealed = false;
-  renderRevision();
-}
+  if (!revisionState.deck.length) return;
 
-function shuffleDeck() {
-  revisionDeck = [...revisionDeck].sort(() => Math.random() - 0.5);
-  revisionShuffled = true;
-  revisionIndex = 0;
-  meaningRevealed = false;
+  revisionState.index =
+    (
+        revisionState.index +
+        direction +
+        revisionState.deck.length
+    ) % revisionState.deck.length;
+
+  revisionState.revealed = false;
   renderRevision();
 }
 
@@ -763,7 +777,7 @@ function importDictionary(event) {
         ];
       }
 
-      revisionShuffled = false;
+      revisionState.shuffled = false;
       saveEntries(entries);
       saveWatchlists(watchlists);
       render();
@@ -1201,7 +1215,7 @@ function showWordDetails(wordId) {
 
         entries = result.entries;
 
-        revisionShuffled = false;
+        revisionState.shuffled = false;
 
         render();
 
@@ -1229,7 +1243,7 @@ function showWordDetails(wordId) {
     entries = result.entries;
     watchlists = result.watchlists;
 
-    revisionShuffled = false;
+    revisionState.shuffled = false;
 
     render();
   });
@@ -1263,7 +1277,7 @@ elements.confirmGeneratedButton.addEventListener("click", () => {
 
     entries = result.entries;
 
-    revisionShuffled = false;
+    revisionState.shuffled = false;
 
     clearForm(false);
 
@@ -1282,13 +1296,24 @@ elements.sortInput.addEventListener("change", renderWords);
 elements.prevCardButton.addEventListener("click", () => moveCard(-1));
 elements.nextCardButton.addEventListener("click", () => moveCard(1));
 elements.revealButton.addEventListener("click", () => {
-  meaningRevealed = !meaningRevealed;
+  revisionState.revealed = !revisionState.revealed;
   renderRevision();
 });
-elements.shuffleButton.addEventListener("click", shuffleDeck);
+elements.shuffleButton.addEventListener("click", () => {
+
+    const result = shuffleDeck(revisionState.deck);
+
+    revisionState.deck = result.deck;
+    revisionState.index = result.index;
+    revisionState.shuffled = result.shuffled;
+    revisionState.revealed = result.revealed;
+
+    renderRevision();
+
+});
 elements.hardButton.addEventListener("click", () => {
 
-    const entry = revisionDeck[revisionIndex];
+    const entry = revisionState.deck[revisionState.index];
     if (!entry) return;
 
     const result = markCurrent({
@@ -1307,7 +1332,7 @@ elements.hardButton.addEventListener("click", () => {
 
 elements.goodButton.addEventListener("click", () => {
 
-    const entry = revisionDeck[revisionIndex];
+    const entry = revisionState.deck[revisionState.index];
     if (!entry) return;
 
     const result = markCurrent({
@@ -1346,25 +1371,25 @@ elements.reviseWatchlistButton.addEventListener("click", () => {
     alert("Add some words to this watchlist first before revising!");
     return;
   }
-  revisionWatchlistId = activeWatchlistId;
-  revisionLetter = null;
-  revisionIndex = 0;
-  revisionShuffled = false;
-  meaningRevealed = false;
+  revisionState.watchlistId = activeWatchlistId;
+  revisionState.letter = null;
+  revisionState.index = 0;
+  revisionState.shuffled = false;
+  revisionState.revealed = false;
   switchView("revise");
 });
 elements.exitWatchlistRevisionBtn.addEventListener("click", () => {
-  revisionWatchlistId = null;
-  revisionIndex = 0;
-  revisionShuffled = false;
-  meaningRevealed = false;
+  revisionState.watchlistId = null;
+  revisionState.index = 0;
+  revisionState.shuffled = false;
+  revisionState.revealed = false;
   renderRevision();
 });
 elements.exitLetterRevisionBtn.addEventListener("click", () => {
-  revisionLetter = null;
-  revisionIndex = 0;
-  revisionShuffled = false;
-  meaningRevealed = false;
+  revisionState.letter = null;
+  revisionState.index = 0;
+  revisionState.shuffled = false;
+  revisionState.revealed = false;
   renderRevision();
 });
 elements.watchlistSelectorModal.addEventListener("click", (e) => {
