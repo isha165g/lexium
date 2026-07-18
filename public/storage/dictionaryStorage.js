@@ -1,3 +1,5 @@
+import { ERROR_MESSAGES } from "../shared/errors.js";
+
 const STORAGE_KEY = "lexium.dictionary.v1";
 
 export function loadEntries(defaultEntries = []) {
@@ -16,8 +18,12 @@ export function loadEntries(defaultEntries = []) {
 }
 
 export function saveEntries(entries) {
-    localStorage.setItem(
-        STORAGE_KEY,
-        JSON.stringify(entries)
-    );
+    try {
+        localStorage.setItem(
+            STORAGE_KEY,
+            JSON.stringify(entries)
+        );
+    } catch {
+        throw new Error(ERROR_MESSAGES.SAVE_FAILED);
+    }
 }

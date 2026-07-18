@@ -8,6 +8,8 @@ import {
 } 
 from "../shared/helper.js";
 
+import { ERROR_MESSAGES } from "../shared/errors.js";
+
 const DICTIONARY_API = "https://api.dictionaryapi.dev/api/v2/entries/en/";
 
 export async function generateWordDetails(word) {
@@ -31,7 +33,16 @@ async function fetchAiWordDetails(word) {
 }
 
 async function fetchWordDetails(word) {
-  const response = await fetch(`${DICTIONARY_API}${encodeURIComponent(word)}`);
+  let response;
+  try {
+    response = await fetch(`${DICTIONARY_API}${encodeURIComponent(word)}`);
+  } catch (error) {
+    if (error.name === "TypeError" || !navigator.onLine) {
+      throw new Error(ERROR_MESSAGES.NETWORK);
+    }
+    throw error;
+  }
+
   if (!response.ok) {
     throw new Error(`No dictionary entry found for "${word}".`);
   }

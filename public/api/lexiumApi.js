@@ -1,17 +1,26 @@
+import { ERROR_MESSAGES } from "../shared/errors.js";
+
 async function request(url, options = {}) {
-  const response = await fetch(url, options);
-
-  let data = {};
-
   try {
-    data = await response.json();
-  } catch {}
+    const response = await fetch(url, options);
 
-  if (!response.ok) {
-    throw new Error(data.error || "Request failed.");
+    let data = {};
+
+    try {
+      data = await response.json();
+    } catch {}
+
+    if (!response.ok) {
+      throw new Error(data.error || "Request failed.");
+    }
+
+    return data;
+  } catch (error) {
+    if (error.name === "TypeError" || !navigator.onLine) {
+      throw new Error(ERROR_MESSAGES.NETWORK);
+    }
+    throw error;
   }
-
-  return data;
 }
 
 export function generateWord(word) {

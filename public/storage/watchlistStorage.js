@@ -1,3 +1,5 @@
+import { ERROR_MESSAGES } from "../shared/errors.js";
+
 const WATCHLISTS_STORAGE_KEY =
     "lexium.watchlists.v1";
 
@@ -26,9 +28,12 @@ export function loadWatchlists(defaultWatchlists) {
 }
 
 export function saveWatchlists(watchlists) {
-
-    localStorage.setItem(
-        WATCHLISTS_STORAGE_KEY,
-        JSON.stringify(watchlists)
-    );
+    try {
+        localStorage.setItem(
+            WATCHLISTS_STORAGE_KEY,
+            JSON.stringify(watchlists)
+        );
+    } catch {
+        throw new Error(ERROR_MESSAGES.SAVE_FAILED);
+    }
 }
