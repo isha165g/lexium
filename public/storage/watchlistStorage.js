@@ -33,7 +33,8 @@ export function saveWatchlists(watchlists) {
             WATCHLISTS_STORAGE_KEY,
             JSON.stringify(watchlists)
         );
-    } catch {
+    } catch (error) {
+        console.error("Failed to save watchlists to localStorage:", error);
         throw new Error(ERROR_MESSAGES.SAVE_FAILED);
     }
 }

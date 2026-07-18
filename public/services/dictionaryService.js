@@ -37,6 +37,7 @@ async function fetchWordDetails(word) {
   try {
     response = await fetch(`${DICTIONARY_API}${encodeURIComponent(word)}`);
   } catch (error) {
+    console.error("Fallback dictionary API request failed:", error);
     if (error.name === "TypeError" || !navigator.onLine) {
       throw new Error(ERROR_MESSAGES.NETWORK);
     }
@@ -44,6 +45,7 @@ async function fetchWordDetails(word) {
   }
 
   if (!response.ok) {
+    console.error(`Fallback dictionary API returned non-OK status (${response.status}) for "${word}"`);
     throw new Error(`No dictionary entry found for "${word}".`);
   }
 

@@ -11,11 +11,14 @@ async function request(url, options = {}) {
     } catch {}
 
     if (!response.ok) {
-      throw new Error(data.error || "Request failed.");
+      const errorMsg = data.error || "Request failed.";
+      console.error(`API response error (status ${response.status}):`, errorMsg);
+      throw new Error(errorMsg);
     }
 
     return data;
   } catch (error) {
+    console.error("API request failed:", error);
     if (error.name === "TypeError" || !navigator.onLine) {
       throw new Error(ERROR_MESSAGES.NETWORK);
     }

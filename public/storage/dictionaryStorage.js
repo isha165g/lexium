@@ -23,7 +23,8 @@ export function saveEntries(entries) {
             STORAGE_KEY,
             JSON.stringify(entries)
         );
-    } catch {
+    } catch (error) {
+        console.error("Failed to save entries to localStorage:", error);
         throw new Error(ERROR_MESSAGES.SAVE_FAILED);
     }
 }

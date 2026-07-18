@@ -351,6 +351,7 @@ function renderWords() {
         saveEntries(entries);
         render();
       } catch (error) {
+        console.error("Failed to save status change:", error);
         showNotification(error.message, "error");
       }
     });
@@ -379,9 +380,8 @@ function renderWords() {
             setLookupStatus(result.message);
 
         } catch (error) {
-
+            console.error("Failed to refresh entry:", error);
             setLookupStatus(error.message);
-
         }
 
     });
@@ -407,6 +407,7 @@ function renderWords() {
 
             render();
         } catch (error) {
+            console.error("Failed to delete entry:", error);
             showNotification(error.message, "error");
         }
     });
@@ -616,6 +617,7 @@ async function lookupEntry(event) {
     showGeneratedPreview(generatedEntry);
     setLookupStatus("Details found. Save it when it looks right.");
   } catch (error) {
+    console.error("AI lookup entry failed:", error);
     generatedEntry = null;
     hideGeneratedPreview();
     setLookupStatus(
@@ -741,7 +743,8 @@ function exportDictionary() {
     anchor.click();
     URL.revokeObjectURL(url);
   } catch (error) {
-    alert(ERROR_MESSAGES.EXPORT_FAILED);
+    console.error("Failed to export dictionary:", error);
+    showNotification(ERROR_MESSAGES.EXPORT_FAILED, "error");
   }
 }
 
@@ -807,7 +810,8 @@ function importDictionary(event) {
       saveWatchlists(watchlists);
       render();
     } catch (error) {
-      alert(error.message || ERROR_MESSAGES.IMPORT_FAILED);
+      console.error("Failed to import dictionary:", error);
+      showNotification(error.message || ERROR_MESSAGES.IMPORT_FAILED, "error");
     } finally {
       event.target.value = "";
     }
@@ -905,11 +909,17 @@ function renderWatchlists() {
       removeBtn.innerHTML = "&times;";
       removeBtn.addEventListener("click", (e) => {
         e.stopPropagation();
-        watchlists = removeWordFromWatchlist({
-          watchlists,
-          wordId: entry.id,
-          watchlistId: activeWatchlist.id
-        });
+        try {
+          watchlists = removeWordFromWatchlist({
+            watchlists,
+            wordId: entry.id,
+            watchlistId: activeWatchlist.id
+          });
+          renderWatchlists();
+        } catch (error) {
+          console.error("Failed to remove word from watchlist:", error);
+          showNotification(error.message, "error");
+        }
       });
       
       item.append(details, removeBtn);
@@ -991,6 +1001,7 @@ function handleCreateWatchlist() {
         activeWatchlistId = result.watchlist.id;
         renderWatchlists();
     } catch (error) {
+        console.error("Failed to create watchlist:", error);
         showNotification(error.message, "error");
     }
 }
@@ -1021,6 +1032,7 @@ function handleRenameWatchlist() {
         watchlists = result.watchlists;
         renderWatchlists();
     } catch (error) {
+        console.error("Failed to rename watchlist:", error);
         showNotification(error.message, "error");
     }
 }
@@ -1056,6 +1068,7 @@ function openWatchlistSelector(wordId) {
             }
             openWatchlistSelector(wordId);
         } catch (error) {
+            console.error("Failed to update watchlist word selection:", error);
             showNotification(error.message, "error");
         }
     });
@@ -1095,6 +1108,7 @@ function handleQuickWatchlistCreate() {
         openWatchlistSelector(activeSelectorWordId);
         renderWatchlists();
     } catch (error) {
+        console.error("Failed to quickly create watchlist:", error);
         showNotification(error.message, "error");
     }
 }
@@ -1108,7 +1122,7 @@ function handleDeleteWatchlist() {
     if (!activeWatchlist) return;
 
     if (
-        !confirm(
+        !confirmAction(
             `Are you sure you want to delete the watchlist "${activeWatchlist.name}"?`
         )
     ) {
@@ -1128,6 +1142,7 @@ function handleDeleteWatchlist() {
 
         renderWatchlists();
     } catch (error) {
+        console.error("Failed to delete watchlist:", error);
         showNotification(error.message, "error");
     }
 }
@@ -1257,6 +1272,7 @@ function showWordDetails(wordId) {
       render();
       showWordDetails(wordId);
     } catch (error) {
+      console.error("Failed to save status change:", error);
       showNotification(error.message, "error");
     }
   });
@@ -1279,9 +1295,8 @@ function showWordDetails(wordId) {
         setLookupStatus(result.message);
 
     } catch (error) {
-
+        console.error("Failed to refresh entry:", error);
         setLookupStatus(error.message);
-
     }
   });
   
@@ -1307,6 +1322,7 @@ function showWordDetails(wordId) {
 
         render();
     } catch (error) {
+        console.error("Failed to delete entry:", error);
         showNotification(error.message, "error");
     }
   });
@@ -1361,6 +1377,7 @@ function bindEvents() {
 
       setLookupStatus(result.message);
     } catch (error) {
+      console.error("Failed to save generated entry:", error);
       showNotification(error.message, "error");
     }
   });
@@ -1461,7 +1478,7 @@ function bindEvents() {
     const wl = watchlists.find(w => w.id === activeWatchlistId);
     if (!wl) return;
     if (!wl.wordIds.length) {
-      alert("Add some words to this watchlist first before revising!");
+      showNotification(ERROR_MESSAGES.REVISION_EMPTY, "warning");
       return;
     }
     revisionState.watchlistId = activeWatchlistId;
@@ -1510,7 +1527,8 @@ function bindEvents() {
 async function checkBackend() {
   try {
     localServerStatus = await health();
-  } catch {
+  } catch (error) {
+    console.warn("Backend health check failed:", error);
     localServerStatus = {
       ok: false,
       hasGeminiKey: false
