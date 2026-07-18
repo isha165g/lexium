@@ -1264,11 +1264,23 @@ function render() {
   if (currentView === "revise") renderRevision();
 }
 
-elements.tabs.forEach((tab) => tab.addEventListener("click", () => switchView(tab.dataset.view)));
-elements.wordForm.addEventListener("submit", lookupEntry);
-elements.confirmGeneratedButton.addEventListener("click", () => {
+function bindEvents() {
+
+  // -------------------------
+  // Navigation
+  // -------------------------
+
+  elements.tabs.forEach((tab) => tab.addEventListener("click", () => switchView(tab.dataset.view)));
+
+  // -------------------------
+  // Dictionary & Search
+  // -------------------------
+
+  elements.wordForm.addEventListener("submit", lookupEntry);
+
+  elements.confirmGeneratedButton.addEventListener("click", () => {
     const result = saveGeneratedEntry({
-        entries,
+        entries,  
         generatedEntry,
         entryId: elements.entryId.value
     });
@@ -1284,23 +1296,27 @@ elements.confirmGeneratedButton.addEventListener("click", () => {
     render();
 
     setLookupStatus(result.message);
-});
-elements.clearGeneratedButton.addEventListener("click", clearForm);
-elements.clearFormButton.addEventListener("click", clearForm);
-elements.newWordButton.addEventListener("click", () => {
-  clearForm();
-  elements.wordInput.focus();
-});
-elements.searchInput.addEventListener("input", renderWords);
-elements.sortInput.addEventListener("change", renderWords);
-elements.prevCardButton.addEventListener("click", () => moveCard(-1));
-elements.nextCardButton.addEventListener("click", () => moveCard(1));
-elements.revealButton.addEventListener("click", () => {
-  revisionState.revealed = !revisionState.revealed;
-  renderRevision();
-});
-elements.shuffleButton.addEventListener("click", () => {
+  });
+  elements.clearGeneratedButton.addEventListener("click", clearForm);
+  elements.clearFormButton.addEventListener("click", clearForm);
+  elements.newWordButton.addEventListener("click", () => {
+    clearForm();
+    elements.wordInput.focus();
+  });
+  elements.searchInput.addEventListener("input", renderWords);
+  elements.sortInput.addEventListener("change", renderWords);
 
+  // -------------------------
+  // Revision
+  // -------------------------
+
+  elements.prevCardButton.addEventListener("click", () => moveCard(-1));
+  elements.nextCardButton.addEventListener("click", () => moveCard(1));
+  elements.revealButton.addEventListener("click", () => {
+    revisionState.revealed = !revisionState.revealed;
+    renderRevision();
+  });
+  elements.shuffleButton.addEventListener("click", () => {
     const result = shuffleDeck(revisionState.deck);
 
     revisionState.deck = result.deck;
@@ -1309,9 +1325,8 @@ elements.shuffleButton.addEventListener("click", () => {
     revisionState.revealed = result.revealed;
 
     renderRevision();
-
-});
-elements.hardButton.addEventListener("click", () => {
+  });
+  elements.hardButton.addEventListener("click", () => {
 
     const entry = revisionState.deck[revisionState.index];
     if (!entry) return;
@@ -1327,10 +1342,8 @@ elements.hardButton.addEventListener("click", () => {
     moveCard(1);
 
     render();
-
-});
-
-elements.goodButton.addEventListener("click", () => {
+  });
+  elements.goodButton.addEventListener("click", () => {
 
     const entry = revisionState.deck[revisionState.index];
     if (!entry) return;
@@ -1346,67 +1359,86 @@ elements.goodButton.addEventListener("click", () => {
     moveCard(1);
 
     render();
+  });
+  
+    // -------------------------
+    // Import / Export
+    // -------------------------
 
-});
-elements.exportButton.addEventListener("click", exportDictionary);
-elements.importInput.addEventListener("change", importDictionary);
+  elements.exportButton.addEventListener("click", exportDictionary);  
+  elements.importInput.addEventListener("change", importDictionary);
 
-elements.newWatchlistButton.addEventListener("click", handleCreateWatchlist);
-elements.renameWatchlistButton.addEventListener("click", handleRenameWatchlist);
-elements.deleteWatchlistButton.addEventListener("click", handleDeleteWatchlist);
-elements.watchlistWordSearch.addEventListener("input", handleWatchlistWordSearch);
-elements.quickWatchlistCreateBtn.addEventListener("click", handleQuickWatchlistCreate);
-elements.closeWatchlistModalBtn.addEventListener("click", () => {
-  elements.watchlistSelectorModal.hidden = true;
-});
-elements.closeDrawerBtn.addEventListener("click", () => {
-  elements.wordDetailDrawer.hidden = true;
-});
-elements.synonymsSearchInput.addEventListener("input", renderSynonyms);
-elements.reviseWatchlistButton.addEventListener("click", () => {
-  if (!activeWatchlistId) return;
-  const wl = watchlists.find(w => w.id === activeWatchlistId);
-  if (!wl) return;
-  if (!wl.wordIds.length) {
-    alert("Add some words to this watchlist first before revising!");
-    return;
-  }
-  revisionState.watchlistId = activeWatchlistId;
-  revisionState.letter = null;
-  revisionState.index = 0;
-  revisionState.shuffled = false;
-  revisionState.revealed = false;
-  switchView("revise");
-});
-elements.exitWatchlistRevisionBtn.addEventListener("click", () => {
-  revisionState.watchlistId = null;
-  revisionState.index = 0;
-  revisionState.shuffled = false;
-  revisionState.revealed = false;
-  renderRevision();
-});
-elements.exitLetterRevisionBtn.addEventListener("click", () => {
-  revisionState.letter = null;
-  revisionState.index = 0;
-  revisionState.shuffled = false;
-  revisionState.revealed = false;
-  renderRevision();
-});
-elements.watchlistSelectorModal.addEventListener("click", (e) => {
-  if (e.target === elements.watchlistSelectorModal) {
+    // -------------------------
+    // Watchlists
+    // -------------------------
+
+  elements.newWatchlistButton.addEventListener("click", handleCreateWatchlist);
+  elements.renameWatchlistButton.addEventListener("click", handleRenameWatchlist);
+  elements.deleteWatchlistButton.addEventListener("click", handleDeleteWatchlist);
+  elements.watchlistWordSearch.addEventListener("input", handleWatchlistWordSearch);
+  elements.quickWatchlistCreateBtn.addEventListener("click", handleQuickWatchlistCreate);
+
+    // -------------------------
+    // Modals
+    // -------------------------
+
+  elements.closeWatchlistModalBtn.addEventListener("click", () => {
     elements.watchlistSelectorModal.hidden = true;
-  }
-});
-elements.wordDetailDrawer.addEventListener("click", (e) => {
-  if (e.target === elements.wordDetailDrawer) {
+  });
+  elements.closeDrawerBtn.addEventListener("click", () => {
     elements.wordDetailDrawer.hidden = true;
-  }
-});
-document.addEventListener("click", (e) => {
-  if (!elements.watchlistWordSearch.contains(e.target) && !elements.watchlistWordDropdown.contains(e.target)) {
-    elements.watchlistWordDropdown.hidden = true;
-  }
-});
+  });
+  elements.synonymsSearchInput.addEventListener("input", renderSynonyms);
+  elements.reviseWatchlistButton.addEventListener("click", () => {
+    if (!activeWatchlistId) return;
+    const wl = watchlists.find(w => w.id === activeWatchlistId);
+    if (!wl) return;
+    if (!wl.wordIds.length) {
+      alert("Add some words to this watchlist first before revising!");
+      return;
+    }
+    revisionState.watchlistId = activeWatchlistId;
+    revisionState.letter = null;
+    revisionState.index = 0;
+    revisionState.shuffled = false;
+    revisionState.revealed = false;
+    switchView("revise");
+  });
+  elements.exitWatchlistRevisionBtn.addEventListener("click", () => {
+    revisionState.watchlistId = null;
+    revisionState.index = 0;
+    revisionState.shuffled = false;
+    revisionState.revealed = false;
+    renderRevision();
+  });
+  elements.exitLetterRevisionBtn.addEventListener("click", () => {
+    revisionState.letter = null;
+    revisionState.index = 0;
+    revisionState.shuffled = false;
+    revisionState.revealed = false;
+    renderRevision();
+  });
+  elements.watchlistSelectorModal.addEventListener("click", (e) => {
+    if (e.target === elements.watchlistSelectorModal) {
+      elements.watchlistSelectorModal.hidden = true;
+    }
+  });
+  elements.wordDetailDrawer.addEventListener("click", (e) => {
+    if (e.target === elements.wordDetailDrawer) {
+      elements.wordDetailDrawer.hidden = true;
+    }
+  });
+
+    // -------------------------
+    // Global
+    // -------------------------
+
+  document.addEventListener("click", (e) => {
+    if (!elements.watchlistWordSearch.contains(e.target) && !elements.watchlistWordDropdown.contains(e.target)) {
+      elements.watchlistWordDropdown.hidden = true;
+    }
+  });
+}
 
 async function checkBackend() {
   try {
@@ -1423,15 +1455,19 @@ function updateApiStatusDisplay() {
   if (localServerStatus.ok && localServerStatus.hasGeminiKey) {
     elements.aiNote.textContent =
       `AI connected (${localServerStatus.model})`;
-
     elements.aiNote.style.color = "var(--green)";
   } else {
     elements.aiNote.textContent =
       "AI unavailable. Using the free dictionary.";
-
     elements.aiNote.style.color = "var(--muted)";
   }
 }
 
-render();
-checkBackend().then(updateApiStatusDisplay);
+async function initializeApp() {
+    bindEvents();
+    render();
+    await checkBackend();
+    updateApiStatusDisplay();
+}
+
+initializeApp();
